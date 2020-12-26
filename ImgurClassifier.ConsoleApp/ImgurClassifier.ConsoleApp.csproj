@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net5.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML" Version="1.5.4" />
+    <PackageReference Include="Microsoft.ML.FastTree" Version="1.5.4" />
+    <PackageReference Include="Microsoft.ML.DnnImageFeaturizer.ResNet18" Version="0.17.4" />
+    <PackageReference Include="Microsoft.ML.ImageAnalytics" Version="1.5.4" />
+    <PackageReference Include="Microsoft.ML.CpuMath" Version="1.5.4" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.6.0" />
+    <PackageReference Include="Microsoft.ML.OnnxTransformer" Version="1.5.4" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.6.0" />
+    <PackageReference Include="Microsoft.ML.Mkl.Components" Version="1.5.4" />
+    <PackageReference Include="Microsoft.ML.Mkl.Redist" Version="1.5.4" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.MKLML" Version="1.6.0" />
+    <PackageReference Include="Microsoft.ML.OnnxConverter" Version="0.17.4" />
+    <PackageReference Include="Microsoft.ML.Experimental" Version="0.17.4" />
+    <PackageReference Include="Microsoft.ML.Featurizers" Version="0.17.4" />
+    <PackageReference Include="runtime.osx.10.10-x64.CoreCompat.System.Drawing" Version="5.8.64" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ImgurClassifier.Model\ImgurClassifier.Model.csproj" />
+    <ProjectReference Include="..\ImgurClassifier.DatasetDownloader\ImgurClassifier.DatasetDownloader.csproj" />
+  </ItemGroup>
+</Project>

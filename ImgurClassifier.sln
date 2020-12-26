@@ -1,0 +1,78 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.26124.0
+MinimumVisualStudioVersion = 15.0.26124.0
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImgurClassifier.ConsoleApp", "ImgurClassifier.ConsoleApp\ImgurClassifier.ConsoleApp.csproj", "{770BE51B-8955-4A1C-9C27-EB6F1E99E278}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImgurClassifier.Model", "ImgurClassifier.Model\ImgurClassifier.Model.csproj", "{0A47C6A7-580E-423F-B01A-41B74CF96352}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImgurClassifier.DatasetDownloader", "ImgurClassifier.DatasetDownloader\ImgurClassifier.DatasetDownloader.csproj", "{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Debug|x64.Build.0 = Debug|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Debug|x86.Build.0 = Debug|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Release|Any CPU.Build.0 = Release|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Release|x64.ActiveCfg = Release|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Release|x64.Build.0 = Release|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Release|x86.ActiveCfg = Release|Any CPU
+		{770BE51B-8955-4A1C-9C27-EB6F1E99E278}.Release|x86.Build.0 = Release|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Debug|x64.Build.0 = Debug|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Debug|x86.Build.0 = Debug|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Release|x64.ActiveCfg = Release|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Release|x64.Build.0 = Release|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Release|x86.ActiveCfg = Release|Any CPU
+		{0A47C6A7-580E-423F-B01A-41B74CF96352}.Release|x86.Build.0 = Release|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Debug|x64.Build.0 = Debug|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Debug|x86.Build.0 = Debug|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Release|x64.ActiveCfg = Release|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Release|x64.Build.0 = Release|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Release|x86.ActiveCfg = Release|Any CPU
+		{BFED4CF3-0547-4FAE-A887-2508D86AC0FD}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(MonoDevelopProperties) = preSolution
+		Policies = $0
+		$0.DotNetNamingPolicy = $1
+		$1.DirectoryNamespaceAssociation = PrefixedHierarchical
+		$0.VersionControlPolicy = $2
+		$0.TextStylePolicy = $3
+		$3.inheritsSet = null
+		$3.scope = text/x-csharp
+		$0.CSharpFormattingPolicy = $4
+		$4.scope = text/x-csharp
+		$0.TextStylePolicy = $5
+		$5.FileWidth = 80
+		$5.TabsToSpaces = True
+		$5.scope = text/plain
+		$0.StandardHeader = $6
+	EndGlobalSection
+EndGlobal
