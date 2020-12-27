@@ -19,7 +19,8 @@ namespace ImgurClassifier.ConsoleApp
 
             MLContext mlContext = new MLContext();
 
-           
+            mlContext.Log += ConsoleLogger;
+
             Dictionary<string, string> datasetSplits = DatasetDownloader.DatasetDownloader.GetDataset();
             string trainFileName = datasetSplits["train"];
             var validFileName = datasetSplits["valid"];
@@ -72,6 +73,11 @@ namespace ImgurClassifier.ConsoleApp
             string fullPath = Path.Combine(assemblyFolderPath, relativePath);
 
             return fullPath;
+        }
+
+        private static void ConsoleLogger(object sender, LoggingEventArgs e)
+        {
+            Console.WriteLine(e.Message);
         }
     }
 }

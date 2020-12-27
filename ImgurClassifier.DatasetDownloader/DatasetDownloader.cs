@@ -10,17 +10,23 @@ using Newtonsoft.Json.Linq;
 
 namespace ImgurClassifier.DatasetDownloader
 {
-	public static class DatasetDownloader
+    public static class DatasetDownloader
 	{
 
 		private static readonly (string split, float weight, string label, string url)[] urls = {
 				// Recent user submissions
+				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/13?client_id="),
+				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/12?client_id="),
+				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/11?client_id="),
+				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/10?client_id="),
+				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/9?client_id="),
+				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/8?client_id="),
 				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/7?client_id="),
 				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/6?client_id="),
-				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/5?client_id="),
-				("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/4?client_id="),
-				("valid", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/3?client_id="),
-				("valid", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/2?client_id="),
+				("valid", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/5?client_id="),
+				("valid", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/4?client_id="),
+				("test", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/3?client_id="),
+				("test", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/2?client_id="),
 				("test", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/1?client_id="),
 				("test", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/0?client_id="),
 
@@ -33,12 +39,18 @@ namespace ImgurClassifier.DatasetDownloader
 				("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/random/random/0?client_id="),*/
 
 				// Recent viral images
+				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/13?client_id="),
+				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/12?client_id="),
+				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/11?client_id="),
+				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/10?client_id="),
+				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/9?client_id="),
+				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/8?client_id="),
 				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/7?client_id="),
 				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/6?client_id="),
-				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/5?client_id="),
-				("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/4?client_id="),
-				("valid", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/3?client_id="),
-				("valid", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/2?client_id="),
+				("valid", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/5?client_id="),
+				("valid", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/4?client_id="),
+				("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/3?client_id="),
+				("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/2?client_id="),
 				("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/1?client_id="),
 				("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/0?client_id="),
 			};
@@ -158,9 +170,9 @@ namespace ImgurClassifier.DatasetDownloader
 							string img1FileName, img2FileName, img3FileName;
 							try
 							{
-								img1FileName = GetImage(split, label, (string)(isAlbum ? row?["images"]?.ElementAtOrDefault(0)?["link"] : row?["link"]));
-								img2FileName = GetImage(split, label, (string)(row?["images"]?.ElementAtOrDefault(1)?["link"]));
-								img3FileName = GetImage(split, label, (string)(row?["images"]?.ElementAtOrDefault(2)?["link"]));
+								img1FileName = DownloadImage(split, label, (string)(isAlbum ? row?["images"]?.ElementAtOrDefault(0)?["link"] : row?["link"]));
+								img2FileName = DownloadImage(split, label, (string)(row?["images"]?.ElementAtOrDefault(1)?["link"]));
+								img3FileName = DownloadImage(split, label, (string)(row?["images"]?.ElementAtOrDefault(2)?["link"]));
 							}
 							catch (WebException e)
 							{
@@ -237,7 +249,7 @@ namespace ImgurClassifier.DatasetDownloader
 
 		}
 
-		private static string GetImage(string split, string label, string url)
+		private static string DownloadImage(string split, string label, string url)
 		{
 			if (string.IsNullOrEmpty(url))
 			{

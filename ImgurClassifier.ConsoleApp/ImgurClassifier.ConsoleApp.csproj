@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.ML.Experimental" Version="0.17.4" />
     <PackageReference Include="Microsoft.ML.Featurizers" Version="0.17.4" />
     <PackageReference Include="runtime.osx.10.10-x64.CoreCompat.System.Drawing" Version="5.8.64" />
+    <PackageReference Include="Microsoft.ML.AutoML" Version="0.17.4" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ImgurClassifier.Model\ImgurClassifier.Model.csproj" />
