@@ -4,15 +4,16 @@ using System.Linq;
 using Microsoft.ML;
 using ImgurClassifier.Model.DataModels;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 
 namespace ImgurClassifier.ConsoleApp
 {
-    class Program
+    internal class Program
     {
         //Machine Learning model to load and use for predictions
         private const string MODEL_FILEPATH = @"../../../../ImgurClassifier.Model/MLModel.zip";
 
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
 
             Console.WriteLine("\n\n=============== Starting imgur classifier sample  ===============");
@@ -28,7 +29,7 @@ namespace ImgurClassifier.ConsoleApp
 
             // Training code used by ML.NET CLI and AutoML to generate the model
             File.Delete(MODEL_FILEPATH);
-            ModelBuilder.CreateModel();
+            ModelBuilder.CreateModel(mlContext);
 
             ITransformer mlModel = mlContext.Model.Load(GetAbsolutePath(MODEL_FILEPATH), out DataViewSchema inputSchema);
 
@@ -40,8 +41,10 @@ namespace ImgurClassifier.ConsoleApp
             // Try a single prediction
             ModelOutput predictionResult = predEngine.Predict(sampleData);
 
+            Console.WriteLine($"Sample data:\n {JsonConvert.SerializeObject(sampleData, Formatting.Indented)}");
             Console.WriteLine($"Single Prediction --> Actual value: {sampleData.Label} | Predicted value: {predictionResult.Prediction} | Predicted scores: [{String.Join(",", predictionResult.Score)}]");
 
+            Console.WriteLine("=============== Done with sample ===============");
             Console.WriteLine("=============== End of process, hit any key to finish ===============");
             Console.ReadKey();
 
@@ -77,7 +80,10 @@ namespace ImgurClassifier.ConsoleApp
 
         private static void ConsoleLogger(object sender, LoggingEventArgs e)
         {
-            Console.WriteLine(e.Message);
+            if ((e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Error || e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Warning || (e.Source == "AutoML" && !e.RawMessage.StartsWith("[Source="))) && !e.RawMessage.StartsWith("Encountered imag"))
+            {
+                Console.WriteLine($"{DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")} { e.Message}");
+            }
         }
     }
 }
