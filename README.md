@@ -16,6 +16,6 @@ Techniques demonstrated:
 * Multi-threaded parallel model creation
 * Expression transform to create a `Weight` column
 * Image featurization
-* Label rotation to allow a regression model train on a multi-class dataset
+* Label rotation to allow a regression model to train on a multi-class dataset
 * String statistics (length, number of vowels, word count, ...) using a Custom Mapper
-* Explainability -- feature importance
+* Explainability -- feature importance from model weights via training a proxy model
