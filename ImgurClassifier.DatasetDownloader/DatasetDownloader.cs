@@ -14,56 +14,103 @@ namespace ImgurClassifier.DatasetDownloader
     public static class DatasetDownloader
     {
 
-        private static readonly (string split, float weight, string label, string url)[] urls = {
+        private static List<(string split, float weight, string url)> urls = new(new (string split, float weight, string url)[]{
             // Recent user submissions
-            ("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/130?client_id="),
-            ("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/120?client_id="),
-            ("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/110?client_id="),
-            ("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/100?client_id="),
-            ("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/90?client_id="),
-            ("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/80?client_id="),
-            ("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/70?client_id="),
-            ("train", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/60?client_id="),
-            ("valid", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/50?client_id="),
-            ("valid", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/40?client_id="),
-            ("test", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/30?client_id="),
-            ("test", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/20?client_id="),
-            ("test", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/10?client_id="),
-            ("test", 10, "UserSub", "https://api.imgur.com/3/gallery/user/time/0?client_id="),
+            /*("train", 1, "https://api.imgur.com/3/gallery/user/time/130?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/user/time/120?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/user/time/110?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/user/time/100?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/user/time/90?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/user/time/80?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/user/time/70?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/user/time/60?client_id="),
+            ("valid", 1, "https://api.imgur.com/3/gallery/user/time/50?client_id="),
+            ("valid", 1, "https://api.imgur.com/3/gallery/user/time/40?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/user/time/30?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/user/time/20?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/user/time/10?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/user/time/0?client_id="),*/
 
-            /*// Random viral images
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/random/random/5?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/random/random/4?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/random/random/3?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/random/random/2?client_id="),
-            ("valid", 1, "FrontPage", "https://api.imgur.com/3/gallery/random/random/1?client_id="),
-            ("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/random/random/0?client_id="),*/
+            // Random FrontPage images
+            ("train", 1, "https://api.imgur.com/3/gallery/random/random/11?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/random/random/10?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/random/random/9?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/random/random/8?client_id="),
+            ("valid", 1, "https://api.imgur.com/3/gallery/random/random/7?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/random/random/6?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/random/random/5?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/random/random/4?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/random/random/3?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/random/random/2?client_id="),
+            ("valid", 1, "https://api.imgur.com/3/gallery/random/random/1?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/random/random/0?client_id="),
 
-            // Recent viral images
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/13?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/12?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/11?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/10?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/9?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/8?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/7?client_id="),
-            ("train", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/6?client_id="),
-            ("valid", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/5?client_id="),
-            ("valid", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/4?client_id="),
-            ("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/3?client_id="),
-            ("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/2?client_id="),
-            ("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/1?client_id="),
-            ("test", 1, "FrontPage", "https://api.imgur.com/3/gallery/hot/time/0?client_id="),
-        };
-        
+            // Recent hot images
+            /*("train", 1, "https://api.imgur.com/3/gallery/hot/time/13?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/hot/time/12?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/hot/time/11?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/hot/time/10?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/hot/time/9?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/hot/time/8?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/hot/time/7?client_id="),
+            ("train", 1, "https://api.imgur.com/3/gallery/hot/time/6?client_id="),
+            ("valid", 1, "https://api.imgur.com/3/gallery/hot/time/5?client_id="),
+            ("valid", 1, "https://api.imgur.com/3/gallery/hot/time/4?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/hot/time/3?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/hot/time/2?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/hot/time/1?client_id="),
+            ("test", 1, "https://api.imgur.com/3/gallery/hot/time/0?client_id="),*/
+        });
+
         public static Dictionary<string, string> GetDataset()
         {
-            return GetDataset(urls);
+            //List<(string split, float weight, string url)> urls = new();
+
+            var r = new Random();
+            int userSubCount = 300;
+            for (var i = 30; i < userSubCount; i++)
+            {
+                string split;
+                //if ((float)i / userSubCount < 0.3) // Newest posts in tests; oldest in train
+                //    split = "test";
+                //else if ((float)i / userSubCount < 0.5)
+                //    split = "valid";
+                //else
+                //    split = "train";
+
+                var s = r.NextDouble();
+                if (s < 0.3)
+                    split = "test";
+                else if (s < 0.5)
+                    split = "valid";
+                else
+                    split = "train";
+
+                urls.Add((split, 1, $"https://api.imgur.com/3/gallery/user/time/{i}?client_id="));
+            }
+
+            /*int frontPageCount = 15;
+            for (var i = 0; i < frontPageCount; i++)
+            {
+                string split;
+                if ((float)i / frontPageCount < 0.3) // Newest posts in tests; oldest in train
+                    split = "test";
+                else if ((float)i / frontPageCount < 0.5)
+                    split = "valid";
+                else
+                    split = "train";
+
+                urls.Add((split, 1, $"https://api.imgur.com/3/gallery/hot/time/{i}?client_id="));
+            }
+            */
+
+            return GetDataset(urls.ToArray());
         }
 
-        private static Dictionary<string, string> GetDataset((string split, float weight, string label, string url)[] urls)
+        private static Dictionary<string, string> GetDataset((string split, float weight, string url)[] urls)
         {
             var datasetSplits = new Dictionary<string, string>();
+            var postsSeen = new HashSet<string>();
 
             var dataDirectoryName = "DataDir";
             Directory.CreateDirectory(dataDirectoryName);
@@ -71,7 +118,7 @@ namespace ImgurClassifier.DatasetDownloader
             datasetSplits["basepath"] = Path.GetFullPath(".");
 
             // Create empty datasets w/ a header row
-            foreach ((string split, float weight, string label, string url) in urls)
+            foreach ((string split, float weight, string url) in urls)
             {
                 var fileName = Path.Combine(dataDirectoryName, $"Imgur_{split}.tsv");
                 datasetSplits[split] = fileName;
@@ -98,7 +145,7 @@ namespace ImgurClassifier.DatasetDownloader
                 Console.WriteLine("=============== Downloading dataset ===============");
 
                 // Create empty datasets w/ a header row
-                foreach ((string split, float weight, string label, string url) in urls)
+                foreach ((string split, float weight, string url) in urls)
                 {
                     using (var fs = File.CreateText(datasetSplits[split] + ".tmp"))
                     {
@@ -144,14 +191,14 @@ namespace ImgurClassifier.DatasetDownloader
                 var r = new Random();
                 string clientId = "546c25a59c58ad7"; // (r.Next().ToString("X") + r.Next().ToString("X")).ToLowerInvariant();
 
-                foreach ((string split, float weight, string label, string url) in urls)
+                foreach ((string split, float weight, string url) in urls)
                 {
                     using (var fs = File.AppendText(datasetSplits[split] + ".tmp"))
                     {
                         Console.WriteLine($"Downloading {url + clientId}");
                         string json = new WebClient().DownloadString(url + clientId);
                         var jsonDict = JObject.Parse(json);
-
+                        var rowsWritten = 0;
                         /*
                         f.Name = y.link;
                         f.title = y.title;
@@ -169,14 +216,28 @@ namespace ImgurClassifier.DatasetDownloader
                         f.img1Type = y.images[0]?.type;
                         */
 
-                        for (int i = 0; i < jsonDict["data"].Count(); i++)
+                        var length = jsonDict["data"].Count();
+                        Console.WriteLine($"split={split}: Found [{length}] posts for url {url}");
+
+                        for (int i = 0; i < length; i++)
                         {
                             var row = jsonDict["data"][i];
                             bool isAlbum = (bool)(row?["is_album"]);
 
+                            var postUrl = (string)row?["link"] ?? "";
+                            if (postsSeen.Contains(postUrl))
+                            {
+                                //throw new Exception($"Post already seen: {postUrl}");
+                                Console.WriteLine($"Post already seen: {postUrl}");
+                                continue; // Ensure we don't have duplicate rows
+                            }
+                            postsSeen.Add(postUrl);
+
                             Console.WriteLine($"Time stamp: {DateTimeOffset.FromUnixTimeSeconds((long)row?["datetime"]).DateTime}");
 
                             List<string> features = new List<string>();
+
+                            string label = ((bool)row["in_most_viral"] ? "FrontPage" : "UserSub");
 
                             string img1FileName, img2FileName, img3FileName;
                             try
@@ -255,7 +316,10 @@ namespace ImgurClassifier.DatasetDownloader
                             //Console.WriteLine(string.Join('\t', features));
 
                             fs.WriteLine(string.Join('\t', features));
+                            rowsWritten++;
                         }
+
+                        Console.WriteLine($"split={split} : Wrote [{rowsWritten}] of [{length}] posts for url {url}\n\n");
                     }
                 }
 

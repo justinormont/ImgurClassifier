@@ -61,7 +61,7 @@ namespace ImgurClassifier.ConsoleApp
 
             // Build training pipeline
             //IEstimator<ITransformer> trainingPipeline = BuildTrainingPipeline(mlContext);
-            IEstimator<ITransformer> trainingPipeline = BuildTrainingPipelineUsingAutoML(mlContext, trainingDataView, validationDataView, true);
+            IEstimator<ITransformer> trainingPipeline = BuildTrainingPipelineUsingAutoML(mlContext, trainingDataView, validationDataView, useAutoML: true);
 
             // Train Model
             ITransformer mlModel = TrainModel(mlContext, trainingDataView, trainingPipeline);
@@ -176,9 +176,10 @@ namespace ImgurClassifier.ConsoleApp
 
             // Data process configuration with pipeline data transformations 
             var dataProcessPipeline =
-                mlContext.Transforms.Conversion.MapValueToKey("Label", "Label")
-                // Reset the Weight column to "1.0"
-                //.Append(mlContext.Transforms.Expression("Weight", "x : 1.0f", new[] { "Weight" }))
+                // Up weight the FrontPage posts to handle the class imblanace
+                mlContext.Transforms.Expression("Weight", "x : (x == \"UserSub\" ? 1f : 100.0f)", new[] { "Label" })
+
+                .Append(mlContext.Transforms.Conversion.MapValueToKey("Label", "Label"))
 
                 // Numeric features
                 .Append(mlContext.Transforms.Concatenate("FeaturesNumeric", new[] { "tagAvgFollowers", "tagSumFollowers", "tagAvgTotalItems", "tagSumTotalItems", "imagesCount", "tagCount", "tagMaxFollowers", "tagMaxTotalItems" }))
@@ -196,14 +197,14 @@ namespace ImgurClassifier.ConsoleApp
 
                 // Model stacking using an Averaged Perceptron on the text features
                 .AppendCacheCheckpoint(env: mlContext) // Cache checkpoint since the OVA Averaged Perceptron makes many passes of its data
-                .Append(mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "FeaturesText", numberOfIterations: 10), labelColumnName: "Label")) // Todo: file bug that AveragedPerceptron does not expose exampleWeightColumnName
+                .Append(mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "FeaturesText", numberOfIterations: 10), labelColumnName: "Label")) // todo: file bug that AveragedPerceptron does not expose exampleWeightColumnName
                 .Append(mlContext.Transforms.Concatenate("FeaturesStackedAPOnText", new[] { "Score" })) // Score column from the stacked trainer
 
                 // Model stacking using k-means as a featurizer on the numeric features (note: they were normalized above)
-                //.Append(mlContext.Clustering.Trainers.KMeans(featureColumnName: "FeaturesNumeric", exampleWeightColumnName: "Weight", numberOfClusters: 10))
-                //.Append(mlContext.Transforms.Concatenate("FeaturesKMeansClusterDistanceOnNumeric", new[] { "Score" })) // Score column from the stacked trainer -- todo: file bug that the initialization method is not exposed; random init is way faster for a larger number of clusters
+                .Append(mlContext.Clustering.Trainers.KMeans(featureColumnName: "FeaturesNumeric", exampleWeightColumnName: "Weight", numberOfClusters: 10)) // todo: file bug that the initialization method is not exposed; random init is way faster for a larger number of clusters
+                .Append(mlContext.Transforms.Concatenate("FeaturesKMeansClusterDistanceOnNumeric", new[] { "Score" })) // Score column from the stacked trainer
 
-                // Text statistics (length, vowelCount, numberCount, ...)
+                // String statistics (length, vowelCount, numberCount, ...) on title, img1Desc, img2Desc, img3Desc
                 .Append(mlContext.Transforms.CopyColumns("text", "title"))
                 .Append(mlContext.Transforms.CustomMapping(new StringStatisticsAction().GetMapping(), "StringStatistics"))
                 .Append(mlContext.Transforms.Concatenate("StringStatsOnTitle", new[] { "length", "vowelCount", "consonantCount", "numberCount", "underscoreCount", "letterCount", "wordCount", "wordLengthAverage", "lineCount", "startsWithVowel", "endsInVowel", "endsInVowelNumber", "lowerCaseCount", "upperCaseCount", "upperCasePercent", "letterPercent", "numberPercent", "longestRepeatingChar", "longestRepeatingVowel" }))
@@ -221,9 +222,8 @@ namespace ImgurClassifier.ConsoleApp
                 // Model stacking using k-means as a featurizer on the string statistics features
                 .Append(mlContext.Transforms.NormalizeMinMax("FeaturesStringStatisticsNorm", "FeaturesStringStatistics"))
                 .Append(mlContext.Clustering.Trainers.KMeans(featureColumnName: "FeaturesStringStatisticsNorm", exampleWeightColumnName: "Weight", numberOfClusters: 10))
-                .Append(mlContext.Transforms.Concatenate("FeaturesKMeansClusterDistanceOnStringStats", new[] { "Score" })) // Score column from the stacked trainer -- todo: file bug that the initialization method is not exposed; random init is way faster for a larger number of clusters
-                .Append(mlContext.Transforms.Concatenate("floatVector", new[] { "FeaturesKMeansClusterDistanceOnStringStats" }))
-
+                .Append(mlContext.Transforms.Concatenate("FeaturesKMeansClusterDistanceOnStringStats", new[] { "Score" })) // Score column from the stacked trainer
+                
                 // Model stacking using a LightGBM on the string statistics
                 .Append(mlContext.MulticlassClassification.Trainers.LightGbm(labelColumnName: "Label", featureColumnName: "FeaturesStringStatistics", exampleWeightColumnName: "Weight"))
                 .Append(mlContext.Transforms.Concatenate("FeaturesStackedLGBMOnStringStats", new[] { "Score" })) // Score column from the stacked trainer
@@ -274,7 +274,7 @@ namespace ImgurClassifier.ConsoleApp
                         "FeaturesStackedFastTreeTweedieToPostScoreLog",
                         "FeaturesStringStatistics",
                         "FeaturesStackedLGBMOnStringStats",
-                        //"FeaturesKMeansClusterDistanceOnNumeric",
+                        "FeaturesKMeansClusterDistanceOnNumeric",
                         "FeaturesKMeansClusterDistanceOnStringStats",
                     }
                     // Concatenate the AutoML features if enabled
@@ -285,8 +285,8 @@ namespace ImgurClassifier.ConsoleApp
             // Set the training algorithm 
             var trainer =
                 //mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label")
-                //mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features"), labelColumnName: "Label")
-                mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastForest(labelColumnName: "Label", featureColumnName: "Features"), labelColumnName: "Label")
+                mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight", minimumExampleCountPerLeaf: 2), labelColumnName: "Label")
+                    //mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastForest(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label")
                     //mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label")
                     .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
             var trainingPipeline = dataProcessPipeline.Append(trainer);
@@ -327,8 +327,8 @@ namespace ImgurClassifier.ConsoleApp
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, "Label", "Score", topKPredictionCount: numClasses); // Todo: fix bug to allow for `topKPredictionCount: Int32.MaxValue` 
             ConsoleHelper.PrintMulticlassClassificationMetrics(metrics, classNames);
             Console.WriteLine($"===== Finished Evaluating Model's accuracy with Test data ({sw.ElapsedMilliseconds / 1000.0} sec) =====");
-
         }
+
 
         private static ExperimentResult<MulticlassClassificationMetrics> TrainAutoMLSubPipeline1(MLContext mlContext, IDataView trainDataView, IDataView validationDataView)
         {
@@ -356,6 +356,7 @@ namespace ImgurClassifier.ConsoleApp
             {
                 MaxExperimentTimeInSeconds = 3600,
                 OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
+                //OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
             };
 
             // Set the column purposes for a subset of columns; the rest are auto-inferred
@@ -392,6 +393,11 @@ namespace ImgurClassifier.ConsoleApp
                     validationData: validationDataView,
                     progressHandler: progressHandler,
                     columnInformation: columnInformation);
+
+            Console.WriteLine("\nBest run:");
+            //progressHandler.Report(experimentResult.BestRun);
+            ConsoleHelper.PrintIterationMetrics(experimentResult.RunDetails.ToList().IndexOf(experimentResult.BestRun),
+                experimentResult.BestRun.TrainerName, experimentResult.BestRun.ValidationMetrics, experimentResult.BestRun.RuntimeInSeconds);
             Console.WriteLine($"=============== Finished training AutoML model ({sw.ElapsedMilliseconds / 1000.0} sec) ===============");
 
             return experimentResult;
@@ -422,8 +428,8 @@ namespace ImgurClassifier.ConsoleApp
             var experimentSettings = new MulticlassExperimentSettings
             {
                 MaxExperimentTimeInSeconds = 40 * 60,
-                //OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
-                OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
+                OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
+                //OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
             };
 
             // Set the column purposes for a subset of columns; the rest are auto-inferred
@@ -503,6 +509,11 @@ namespace ImgurClassifier.ConsoleApp
                     columnInformation: columnInformation //,
                                                          //preFeaturizer: preFeaturizer
                   );
+
+            Console.WriteLine("\nBest run:");
+            //progressHandler.Report(experimentResult.BestRun);
+            ConsoleHelper.PrintIterationMetrics(experimentResult.RunDetails.ToList().IndexOf(experimentResult.BestRun),
+                experimentResult.BestRun.TrainerName, experimentResult.BestRun.ValidationMetrics, experimentResult.BestRun.RuntimeInSeconds);
             Console.WriteLine($"=============== Finished training AutoML model ({sw.ElapsedMilliseconds / 1000.0} sec) ===============");
 
             return experimentResult;
@@ -533,7 +544,7 @@ namespace ImgurClassifier.ConsoleApp
                 NumberOfTrees = 500,
                 LabelColumnName = "FloatLabel",
                 FeatureColumnName = "Features",
-                //ExampleWeightColumnName = "Weight",
+                ExampleWeightColumnName = "Weight",
 
                 // Shuffle the label ordering before each tree is learned.
                 // Needed when running a multi-class dataset as regression.

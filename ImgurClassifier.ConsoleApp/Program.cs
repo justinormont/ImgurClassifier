@@ -41,7 +41,7 @@ namespace ImgurClassifier.ConsoleApp
             // Try a single prediction
             ModelOutput predictionResult = predEngine.Predict(sampleData);
 
-            Console.WriteLine($"Sample data:\n {JsonConvert.SerializeObject(sampleData, Formatting.Indented)}");
+            Console.WriteLine($"\nSample data:\n {JsonConvert.SerializeObject(sampleData, Formatting.Indented)}");
             Console.WriteLine($"Single Prediction --> Actual value: {sampleData.Label} | Predicted value: {predictionResult.Prediction} | Predicted scores: [{String.Join(",", predictionResult.Score)}]");
 
             Console.WriteLine("=============== Done with sample ===============");
