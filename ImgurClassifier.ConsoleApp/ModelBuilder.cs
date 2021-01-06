@@ -30,7 +30,7 @@ namespace ImgurClassifier.ConsoleApp
             basepath = datasetSplits["basepath"];
         }
 
-        public static void CreateModel(MLContext mlContext)
+        public static void CreateModel(MLContext mlContext, Action<string> writeLogLine)
         {
             // Load Data
             IDataView trainingDataView = mlContext.Data.LoadFromTextFile<ModelInput>(
@@ -61,89 +61,89 @@ namespace ImgurClassifier.ConsoleApp
 
             // Build training pipeline
             //IEstimator<ITransformer> trainingPipeline = BuildTrainingPipeline(mlContext);
-            IEstimator<ITransformer> trainingPipeline = BuildTrainingPipelineUsingAutoML(mlContext, trainingDataView, validationDataView, useAutoML: true);
+            IEstimator<ITransformer> trainingPipeline = BuildTrainingPipelineUsingAutoML(mlContext, trainingDataView, validationDataView, useAutoML: true, writeLogLine);
 
             // Train Model
-            ITransformer mlModel = TrainModel(mlContext, trainingDataView, trainingPipeline);
+            ITransformer mlModel = TrainModel(mlContext, trainingDataView, trainingPipeline, writeLogLine);
 
             // Evaluate quality of Model
-            EvaluateModel(mlContext, mlModel, testDataView);
+            EvaluateModel(mlContext, mlModel, testDataView, writeLogLine);
 
             // Save model
-            SaveModel(mlContext, mlModel, modelFileName, trainingDataView.Schema);
+            SaveModel(mlContext, mlModel, modelFileName, trainingDataView.Schema, writeLogLine);
 
             // Print model weights of a proxy model
-            PrintProxyModelWeights(mlContext, trainingDataView, trainingPipeline);
+            PrintProxyModelWeights(mlContext, trainingDataView, trainingPipeline, writeLogLine);
         }
 
-        //public static IEstimator<ITransformer> BuildTrainingPipeline(MLContext mlContext)
-        //{
-        //    // Data process configuration with pipeline data transformations 
-        //    var dataProcessPipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", "Label")
-        //        // Reset the Weight column to "1.0"
-        //        .Append(mlContext.Transforms.Expression("Weight", "x : 1.0f", new[] { "Weight"} ))
+        /*public static IEstimator<ITransformer> BuildTrainingPipeline(MLContext mlContext)
+        {
+            // Data process configuration with pipeline data transformations 
+            var dataProcessPipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", "Label")
+                // Reset the Weight column to "1.0"
+                .Append(mlContext.Transforms.Expression("Weight", "x : 1.0f", new[] { "Weight" }))
 
-        //        // Numeric features
-        //        .Append(mlContext.Transforms.Concatenate("FeaturesNumeric", new[] { "tagAvgFollowers", "tagSumFollowers", "tagAvgTotalItems", "tagSumTotalItems", "imagesCount" }))
+                // Numeric features
+                .Append(mlContext.Transforms.Concatenate("FeaturesNumeric", new[] { "tagAvgFollowers", "tagSumFollowers", "tagAvgTotalItems", "tagSumTotalItems", "imagesCount" }))
 
-        //        // Categorical features
-        //        .Append(mlContext.Transforms.Categorical.OneHotEncoding(new[] { new InputOutputColumnPair("img1Type", "img1Type"), new InputOutputColumnPair("img2Type", "img2Type"), new InputOutputColumnPair("img3Type", "img3Type") }))
-        //        .Append(mlContext.Transforms.Concatenate("FeaturesCategorical", new[] { "img1Type", "img2Type", "img3Type" }))
+                // Categorical features
+                .Append(mlContext.Transforms.Categorical.OneHotEncoding(new[] { new InputOutputColumnPair("img1Type", "img1Type"), new InputOutputColumnPair("img2Type", "img2Type"), new InputOutputColumnPair("img3Type", "img3Type") }))
+                .Append(mlContext.Transforms.Concatenate("FeaturesCategorical", new[] { "img1Type", "img2Type", "img3Type" }))
 
-        //        // Text features
-        //        .Append(mlContext.Transforms.Text.FeaturizeText("imgDesc_tf", null, new[] { "img1Desc", "img2Desc", "img3Desc" }))
-        //        .Append(mlContext.Transforms.Text.FeaturizeText("tags_tf", "tags"))
-        //        .Append(mlContext.Transforms.Text.FeaturizeText("title_tf", "title"))
-        //        .Append(mlContext.Transforms.Concatenate("FeaturesText", new[] { "title_tf", "tags_tf", "imgDesc_tf" }))
+                // Text features
+                .Append(mlContext.Transforms.Text.FeaturizeText("imgDesc_tf", null, new[] { "img1Desc", "img2Desc", "img3Desc" }))
+                .Append(mlContext.Transforms.Text.FeaturizeText("tags_tf", "tags"))
+                .Append(mlContext.Transforms.Text.FeaturizeText("title_tf", "title"))
+                .Append(mlContext.Transforms.Concatenate("FeaturesText", new[] { "title_tf", "tags_tf", "imgDesc_tf" }))
 
-        //        // Model stacking using an Averaged Perceptron on the text features
-        //        //.Append(mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "FeaturesText", numberOfIterations: 10), labelColumnName: "Label"))
-        //        //.Append(mlContext.Transforms.Concatenate("FeaturesStackedAPOnText", new[] { "Score" })) // Score column from the stacked trainer
+                // Model stacking using an Averaged Perceptron on the text features
+                //.Append(mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "FeaturesText", numberOfIterations: 10), labelColumnName: "Label"))
+                //.Append(mlContext.Transforms.Concatenate("FeaturesStackedAPOnText", new[] { "Score" })) // Score column from the stacked trainer
 
-        //        // Image features
-        //        .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img1FileName"))
-        //        .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
-        //        .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
-        //        .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage1", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
-        //        /*
-        //        .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img2FileName"))
-        //        .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
-        //        .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
-        //        .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage2", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
+                // Image features
+                .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img1FileName"))
+                .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
+                .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
+                .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage1", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
 
-        //        .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img3FileName"))
-        //        .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
-        //        .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
-        //        .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage3", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
-        //        (*/
-        //        .Append(mlContext.Transforms.Concatenate("FeaturesImage", new[] { "FeaturesImage1" /*, "FeaturesImage2", "FeaturesImage3"*/ }))
-        //        .AppendCacheCheckpoint(env: mlContext) // Cache checkpoint since the DnnFeaturizeImage is slow
+                .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img2FileName"))
+                .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
+                .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
+                .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage2", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
 
-        //        // Model stacking using a logistic regression on the image features to re-learn the output layer of the ResNet model(s) 
-        //        .Append(mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(labelColumnName: "Label", featureColumnName: "FeaturesImage"))
-        //        .Append(mlContext.Transforms.Concatenate("FeaturesStackedLROnImages", new[] { "Score" })) // Score column from the stacked trainer
+                .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img3FileName"))
+                .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
+                .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
+                .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage3", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
+                (
+                .Append(mlContext.Transforms.Concatenate("FeaturesImage", new[] { "FeaturesImage1" "FeaturesImage2", "FeaturesImage3" }))
+                .AppendCacheCheckpoint(env: mlContext) // Cache checkpoint since the DnnFeaturizeImage is slow
 
-        //        .Append(mlContext.Transforms.Concatenate("Features", new[] {
-        //            "FeaturesNumeric",
-        //            "FeaturesCategorical",
-        //            "FeaturesText",
-        //            //"FeaturesStackedAPOnText",
-        //            //"FeaturesImage",
-        //            "FeaturesStackedLROnImages",
-        //        }))
-        //        .AppendCacheCheckpoint(mlContext);
+                // Model stacking using a logistic regression on the image features to re-learn the output layer of the ResNet model(s) 
+                .Append(mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(labelColumnName: "Label", featureColumnName: "FeaturesImage"))
+                .Append(mlContext.Transforms.Concatenate("FeaturesStackedLROnImages", new[] { "Score" })) // Score column from the stacked trainer
 
-        //    // Set the training algorithm 
-        //    //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label")
-        //    //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features"), labelColumnName: "Label")
-        //    var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label")
-        //                              .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
-        //    var trainingPipeline = dataProcessPipeline.Append(trainer);
+                .Append(mlContext.Transforms.Concatenate("Features", new[] {
+                    "FeaturesNumeric",
+                    "FeaturesCategorical",
+                    "FeaturesText",
+                    //"FeaturesStackedAPOnText",
+                    //"FeaturesImage",
+                    "FeaturesStackedLROnImages",
+                }))
+                .AppendCacheCheckpoint(mlContext);
 
-        //    return trainingPipeline;
-        //}
+            // Set the training algorithm 
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label")
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features"), labelColumnName: "Label")
+            var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label")
+                                      .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
+            var trainingPipeline = dataProcessPipeline.Append(trainer);
 
-        public static IEstimator<ITransformer> BuildTrainingPipelineUsingAutoML(MLContext mlContext, IDataView trainDataView, IDataView validationDataView, bool useAutoML)
+            return trainingPipeline;
+        }*/
+
+        public static IEstimator<ITransformer> BuildTrainingPipelineUsingAutoML(MLContext mlContext, IDataView trainDataView, IDataView validationDataView, bool useAutoML, Action<string> writeLogLine)
         {
 
             ExperimentResult<MulticlassClassificationMetrics> experimentResult1 = null;
@@ -155,15 +155,15 @@ namespace ImgurClassifier.ConsoleApp
 
                 if (!useThreads)
                 {
-                    experimentResult1 = TrainAutoMLSubPipeline1(mlContext, trainDataView, validationDataView);
-                    experimentResult2 = TrainAutoMLSubPipeline2(mlContext, trainDataView, validationDataView);
+                    experimentResult1 = TrainAutoMLSubPipeline1(mlContext, trainDataView, validationDataView, writeLogLine);
+                    experimentResult2 = TrainAutoMLSubPipeline2(mlContext, trainDataView, validationDataView, writeLogLine);
                 }
                 else
                 {
-                    Thread workerThread1 = new(() => experimentResult1 = TrainAutoMLSubPipeline1(mlContext, trainDataView, validationDataView));
+                    Thread workerThread1 = new(() => experimentResult1 = TrainAutoMLSubPipeline1(mlContext, trainDataView, validationDataView, writeLogLine));
                     workerThread1.Name = "AutoML Worker Thread - Text  ";
 
-                    Thread workerThread2 = new(() => experimentResult2 = TrainAutoMLSubPipeline2(mlContext, trainDataView, validationDataView));
+                    Thread workerThread2 = new(() => experimentResult2 = TrainAutoMLSubPipeline2(mlContext, trainDataView, validationDataView, writeLogLine));
                     workerThread2.Name = "AutoML Worker Thread - Images";
 
                     workerThread1.Start();
@@ -177,9 +177,9 @@ namespace ImgurClassifier.ConsoleApp
             // Data process configuration with pipeline data transformations 
             var dataProcessPipeline =
                 // Up weight the FrontPage posts to handle the class imblanace
-                mlContext.Transforms.Expression("Weight", "x : (x == \"UserSub\" ? 1f : 100.0f)", new[] { "Label" })
+                mlContext.Transforms.Expression("Weight", "x : (x == \"UserSub\" ? 1.0f : 100.0f)", new[] { "Label" })
 
-                .Append(mlContext.Transforms.Conversion.MapValueToKey("Label", "Label"))
+                .Append(mlContext.Transforms.Conversion.MapValueToKey("Label", "Label", keyOrdinality: ValueToKeyMappingEstimator.KeyOrdinality.ByValue)) // ByValue makes the class ordering stable, making it easier to compare metrics between runs
 
                 // Numeric features
                 .Append(mlContext.Transforms.Concatenate("FeaturesNumeric", new[] { "tagAvgFollowers", "tagSumFollowers", "tagAvgTotalItems", "tagSumTotalItems", "imagesCount", "tagCount", "tagMaxFollowers", "tagMaxTotalItems" }))
@@ -257,7 +257,8 @@ namespace ImgurClassifier.ConsoleApp
 
                     // Model stacking using the previously learned AutoML model #2 on Imge features (note: the AutoML estimator chain may mask existing columns)
                     .Append(experimentResult2.BestRun.Estimator)
-                    .Append(mlContext.Transforms.Concatenate("FeaturesStackedAutoMLOnImages", new[] { "Score" })); // Score column from the stacked trainer
+                    .Append(mlContext.Transforms.Concatenate("FeaturesStackedAutoMLOnImages", new[] { "Score" })) // Score column from the stacked trainer
+                    .AppendCacheCheckpoint(env: mlContext); // Cache checkpoint since the DnnFeaturizeImage is slow
 
                 var automlFeatureColumns = new[] { "FeaturesStackedAutoMLOnTextCatNum", "FeaturesStackedAutoMLOnImages" };
             }
@@ -283,39 +284,40 @@ namespace ImgurClassifier.ConsoleApp
 
 
             // Set the training algorithm 
-            var trainer =
-                //mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label")
-                mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight", minimumExampleCountPerLeaf: 2), labelColumnName: "Label")
-                    //mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastForest(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label")
-                    //mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label")
-                    .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
-            var trainingPipeline = dataProcessPipeline.Append(trainer);
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label");
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight", minimumExampleCountPerLeaf: 2), labelColumnName: "Label");
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LinearSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
+            var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LdSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastForest(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
+            //var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
+                    
+            var trainingPipeline = dataProcessPipeline.Append(trainer).Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
 
             return trainingPipeline;
-
         }
 
-        public static ITransformer TrainModel(MLContext mlContext, IDataView trainingDataView, IEstimator<ITransformer> trainingPipeline)
+
+        public static ITransformer TrainModel(MLContext mlContext, IDataView trainingDataView, IEstimator<ITransformer> trainingPipeline, Action<string> writeLogLine)
         {
             var sw = new Stopwatch();
             sw.Start();
 
-            Console.WriteLine("=============== Training  model ===============");
+            writeLogLine("=============== Training  model ===============");
 
             ITransformer model = trainingPipeline.Fit(trainingDataView);
 
-            Console.WriteLine($"=============== End of training process ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
+            writeLogLine($"=============== End of training process ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
             return model;
         }
 
 
-        private static void EvaluateModel(MLContext mlContext, ITransformer mlModel, IDataView testDataView)
+        private static void EvaluateModel(MLContext mlContext, ITransformer mlModel, IDataView testDataView, Action<string> writeLogLine)
         {
             var sw = new Stopwatch();
             sw.Start();
 
             // Evaluate the model and show accuracy stats
-            Console.WriteLine("===== Evaluating Model's accuracy with Test data =====");
+            writeLogLine("===== Evaluating Model's accuracy with Test data =====");
             IDataView predictions = mlModel.Transform(testDataView);
 
             // Obtuse method of getting the number of classes
@@ -325,20 +327,20 @@ namespace ImgurClassifier.ConsoleApp
             string[] classNames = classNamesVBuffer.DenseValues().Select(a => a.ToString()).ToArray();
 
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, "Label", "Score", topKPredictionCount: numClasses); // Todo: fix bug to allow for `topKPredictionCount: Int32.MaxValue` 
-            ConsoleHelper.PrintMulticlassClassificationMetrics(metrics, classNames);
-            Console.WriteLine($"===== Finished Evaluating Model's accuracy with Test data ({sw.ElapsedMilliseconds / 1000.0} sec) =====");
+            ConsoleHelper.PrintMulticlassClassificationMetrics(metrics, classNames, writeLogLine);
+            writeLogLine($"===== Finished Evaluating Model's accuracy with Test data ({sw.ElapsedMilliseconds / 1000.0} sec) =====");
         }
 
 
-        private static ExperimentResult<MulticlassClassificationMetrics> TrainAutoMLSubPipeline1(MLContext mlContext, IDataView trainDataView, IDataView validationDataView)
+        private static ExperimentResult<MulticlassClassificationMetrics> TrainAutoMLSubPipeline1(MLContext mlContext, IDataView trainDataView, IDataView validationDataView, Action<string> writeLogLine)
         {
             var sw = new Stopwatch();
             sw.Start();
 
             ExperimentResult<MulticlassClassificationMetrics> experimentResult;
 
-            //Console.WriteLine("\n=============== Training Stacked AutoML model on Text, Categorical, Numeric features ===============");
-            Console.WriteLine("\n=============== Training Stacked AutoML model on Text features ===============");
+            //writeLogLine("\n=============== Training Stacked AutoML model on Text, Categorical, Numeric features ===============");
+            writeLogLine("\n=============== Training Stacked AutoML model on Text features ===============");
 
             Func<MulticlassClassificationMetrics> GetBaselineMetrics = () =>
             {
@@ -350,7 +352,7 @@ namespace ImgurClassifier.ConsoleApp
                 return baselineMetrics;
             };
 
-            var progressHandler = new MulticlassExperimentProgressHandler(GetBaselineMetrics);
+            var progressHandler = new MulticlassExperimentProgressHandler(GetBaselineMetrics, writeLogLine);
 
             var experimentSettings = new MulticlassExperimentSettings
             {
@@ -394,24 +396,24 @@ namespace ImgurClassifier.ConsoleApp
                     progressHandler: progressHandler,
                     columnInformation: columnInformation);
 
-            Console.WriteLine("\nBest run:");
+            writeLogLine("\nBest run:");
             //progressHandler.Report(experimentResult.BestRun);
-            ConsoleHelper.PrintIterationMetrics(experimentResult.RunDetails.ToList().IndexOf(experimentResult.BestRun),
-                experimentResult.BestRun.TrainerName, experimentResult.BestRun.ValidationMetrics, experimentResult.BestRun.RuntimeInSeconds);
-            Console.WriteLine($"=============== Finished training AutoML model ({sw.ElapsedMilliseconds / 1000.0} sec) ===============");
+            var iteration = experimentResult.RunDetails.ToList().IndexOf(experimentResult.BestRun) + 1;
+            ConsoleHelper.PrintIterationMetrics(iteration, experimentResult.BestRun.TrainerName, experimentResult.BestRun.ValidationMetrics, experimentResult.BestRun.RuntimeInSeconds, writeLogLine);
+            writeLogLine($"=============== Finished training AutoML model ({sw.ElapsedMilliseconds / 1000.0} sec) ===============");
 
             return experimentResult;
         }
 
 
-        private static ExperimentResult<MulticlassClassificationMetrics> TrainAutoMLSubPipeline2(MLContext mlContext, IDataView trainDataView, IDataView validationDataView)
+        private static ExperimentResult<MulticlassClassificationMetrics> TrainAutoMLSubPipeline2(MLContext mlContext, IDataView trainDataView, IDataView validationDataView, Action<string> writeLogLine)
         {
             var sw = new Stopwatch();
             sw.Start();
 
             ExperimentResult<MulticlassClassificationMetrics> experimentResult;
 
-            Console.WriteLine("\n=============== Training Stacked AutoML model on Image features ===============");
+            writeLogLine("\n=============== Training Stacked AutoML model on Image features ===============");
 
             Func<MulticlassClassificationMetrics> GetBaselineMetrics = () =>
             {
@@ -423,7 +425,7 @@ namespace ImgurClassifier.ConsoleApp
                 return baselineMetrics;
             };
 
-            var progressHandler = new MulticlassExperimentProgressHandler(GetBaselineMetrics);
+            var progressHandler = new MulticlassExperimentProgressHandler(GetBaselineMetrics, writeLogLine);
 
             var experimentSettings = new MulticlassExperimentSettings
             {
@@ -510,17 +512,17 @@ namespace ImgurClassifier.ConsoleApp
                                                          //preFeaturizer: preFeaturizer
                   );
 
-            Console.WriteLine("\nBest run:");
+            writeLogLine("\nBest run:");
             //progressHandler.Report(experimentResult.BestRun);
-            ConsoleHelper.PrintIterationMetrics(experimentResult.RunDetails.ToList().IndexOf(experimentResult.BestRun),
-                experimentResult.BestRun.TrainerName, experimentResult.BestRun.ValidationMetrics, experimentResult.BestRun.RuntimeInSeconds);
-            Console.WriteLine($"=============== Finished training AutoML model ({sw.ElapsedMilliseconds / 1000.0} sec) ===============");
+            var iteration = experimentResult.RunDetails.ToList().IndexOf(experimentResult.BestRun) + 1;
+            ConsoleHelper.PrintIterationMetrics(iteration, experimentResult.BestRun.TrainerName, experimentResult.BestRun.ValidationMetrics, experimentResult.BestRun.RuntimeInSeconds, writeLogLine);
+            writeLogLine($"=============== Finished training AutoML model ({sw.ElapsedMilliseconds / 1000.0} sec) ===============");
 
             return experimentResult;
         }
 
 
-        private static void PrintProxyModelWeights(MLContext mlContext, IDataView trainingDataView, IEstimator<ITransformer> trainingPipeline)
+        private static void PrintProxyModelWeights(MLContext mlContext, IDataView trainingDataView, IEstimator<ITransformer> trainingPipeline, Action<string> writeLogLine)
         {
 
             /*
@@ -545,21 +547,22 @@ namespace ImgurClassifier.ConsoleApp
                 LabelColumnName = "FloatLabel",
                 FeatureColumnName = "Features",
                 ExampleWeightColumnName = "Weight",
-
+                ExecutionTime = true,
+                
                 // Shuffle the label ordering before each tree is learned.
                 // Needed when running a multi-class dataset as regression.
                 ShuffleLabels = true,
             };
 
             // Define the tree-based featurizer's configuration.
-            var options = new FastForestRegressionFeaturizationEstimator.Options
+            /*var options = new FastForestRegressionFeaturizationEstimator.Options
             {
                 InputColumnName = "Features",
                 TreesColumnName = "FeaturesTreeFeatTrees",
                 LeavesColumnName = "FeaturesTreeFeatLeaves",
                 PathsColumnName = "FeaturesTreeFeatPaths",
                 TrainerOptions = trainerOptions
-            };
+            };*/
 
             Action<RowWithKey, RowWithFloat> actionConvertKeyToFloat = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
             {
@@ -572,16 +575,17 @@ namespace ImgurClassifier.ConsoleApp
                 .Append(mlContext.Transforms.CustomMapping(actionConvertKeyToFloat, "Label"))
 
                 // Train a FastForestRegression model
-                .Append(mlContext.Transforms.FeaturizeByFastForestRegression(options));
+                //.Append(mlContext.Transforms.FeaturizeByFastForestRegression(options));
+                .Append(mlContext.Regression.Trainers.FastForest(trainerOptions));
 
             var sw = new Stopwatch();
             sw.Start();
-            Console.WriteLine("=============== Training proxy model ===============");
+            writeLogLine("=============== Training proxy model ===============");
 
             // Fit this pipeline to the training data.
             var model = pipeline.Fit(trainingDataView);
 
-            Console.WriteLine($"=============== End of proxy training process ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
+            writeLogLine($"=============== End of proxy training process ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
 
             // Get the feature importance based on the information gain used during training.
             VBuffer<float> weights = default;
@@ -595,14 +599,20 @@ namespace ImgurClassifier.ConsoleApp
 
             // Sort to place the most important features first
             IEnumerable<string> slotWeightText = slotNames.Items()
-                .Select((x, i) => ($"{(x.Value.Length > 0 ? x.Value : $"UnnamedSlot_{i:000000}")}", weightsValues[i], (float)Math.Abs(weightsValues[i])))
-                .Where(t => t.Item3 > 0)
-                .OrderByDescending(t => t.Item3)
+                .Select((kvp, slotIndex) =>
+                    (
+                        featureName: $"{(kvp.Value.Length > 0 ? kvp.Value : $"UnnamedSlot_{slotIndex:000000}")}",
+                        featureImportance: weightsValues[slotIndex],
+                        featureImportanceAbs: (float)Math.Abs(weightsValues[slotIndex])
+                    )
+                )
+                .Where(tuple => tuple.featureImportanceAbs > 0)
+                .OrderByDescending(tuple => tuple.featureImportanceAbs)
                 .Take(100)
-                .Select(x => $"{x.Item1}: {x.Item2}");
+                .Select((tuple, featureImportanceIndex) => $"{featureImportanceIndex, -3} {tuple.featureImportance, -14}: {tuple.featureName}");
 
-            Console.WriteLine("\nFeature importance:");
-            Console.WriteLine(String.Join("\n", slotWeightText));
+            writeLogLine($"\nFeature importance: (top 100 of {weightsValues.Length})");
+            writeLogLine(String.Join("\n", slotWeightText));
         }
 
         private class RowWithKey
@@ -724,12 +734,12 @@ namespace ImgurClassifier.ConsoleApp
         }
         #endregion
 
-        private static void SaveModel(MLContext mlContext, ITransformer mlModel, string modelRelativePath, DataViewSchema modelInputSchema)
+        private static void SaveModel(MLContext mlContext, ITransformer mlModel, string modelRelativePath, DataViewSchema modelInputSchema, Action<string> writeLogLine)
         {
             // Save/persist the trained model to a .ZIP file
-            Console.WriteLine($"=============== Saving the model  ===============");
+            writeLogLine($"=============== Saving the model  ===============");
             mlContext.Model.Save(mlModel, modelInputSchema, GetAbsolutePath(modelRelativePath));
-            Console.WriteLine("The model is saved to {0}", GetAbsolutePath(modelRelativePath));
+            writeLogLine($"The model is saved to {GetAbsolutePath(modelRelativePath)}");
         }
 
         public static string GetAbsolutePath(string relativePath)
@@ -753,18 +763,20 @@ namespace ImgurClassifier.ConsoleApp
     {
         private int _iterationIndex;
         private readonly Func<MulticlassClassificationMetrics> GetBaselineMetrics;
+        private readonly Action<string> WriteLogLine;
 
-        public MulticlassExperimentProgressHandler(Func<MulticlassClassificationMetrics> getBaselineMetrics)
+        public MulticlassExperimentProgressHandler(Func<MulticlassClassificationMetrics> getBaselineMetrics, Action<string> writeLogLine)
         {
             GetBaselineMetrics = getBaselineMetrics;
+            WriteLogLine = writeLogLine;
         }
 
         public void Report(RunDetail<MulticlassClassificationMetrics> iterationResult)
         {
             if (_iterationIndex++ == 0)
             {
-                ConsoleHelper.PrintMulticlassClassificationMetricsHeader();
-
+                ConsoleHelper.PrintMulticlassClassificationMetricsHeader(WriteLogLine);
+           
                 // todo: Disabled due to bug in OVA-PriorPredictor. See bug: https://github.com/dotnet/machinelearning/issues/5575
                 // Print baseline metrics
                 //var sw = new Stopwatch();
@@ -774,72 +786,68 @@ namespace ImgurClassifier.ConsoleApp
                 //ConsoleHelper.PrintIterationMetrics(-1, "Baseline", baselineMetrics, runTime);
             }
 
-            if (iterationResult.Exception != null)
-            {
-                ConsoleHelper.PrintIterationException(iterationResult.Exception);
-            }
+            if (iterationResult.Exception != null && !(iterationResult.Exception is OperationCanceledException))
+                ConsoleHelper.PrintIterationException(iterationResult.Exception, WriteLogLine);
             else
-            {
                 ConsoleHelper.PrintIterationMetrics(_iterationIndex, iterationResult.TrainerName,
-                    iterationResult.ValidationMetrics, iterationResult.RuntimeInSeconds);
-            }
+                    iterationResult.ValidationMetrics, iterationResult.RuntimeInSeconds, WriteLogLine);
         }
     }
 
-    public static class ConsoleHelper
+    internal static class ConsoleHelper
     {
         private const int Width = 114;
 
-        public static void PrintMulticlassClassificationMetrics(MulticlassClassificationMetrics metrics, string[] classNames)
+        public static void PrintMulticlassClassificationMetrics(MulticlassClassificationMetrics metrics, string[] classNames, Action<string> writer)
         {
-            Console.WriteLine($"************************************************************");
-            Console.WriteLine($"*    Metrics for multi-class classification model   ");
-            Console.WriteLine($"*-----------------------------------------------------------");
-            Console.WriteLine($"Accuracy (micro-avg):              {metrics.MicroAccuracy:0.0000}   # 0..1, higher is better");
-            Console.WriteLine($"Accuracy (macro):                  {metrics.MacroAccuracy:0.0000}   # 0..1, higher is better");
-            Console.WriteLine($"Top-K accuracy:                    [{string.Join(", ", metrics?.TopKAccuracyForAllK?.Select(a => $"{a:0.0000}") ?? new string[] { "Set topKPredictionCount in evaluator to view" })}]   # 0..1, higher is better");
-            Console.WriteLine($"Log-loss reduction:                {metrics.LogLossReduction:0.0000;-0.000}   # -Inf..1, higher is better");
-            Console.WriteLine($"Log-loss:                          {metrics.LogLoss:0.0000}   # 0..Inf, lower is better");
-            Console.WriteLine("\nPer class metrics");
+            writer($"************************************************************");
+            writer($"*    Metrics for multi-class classification model   ");
+            writer($"*-----------------------------------------------------------");
+            writer($"Accuracy (micro-avg):              {metrics.MicroAccuracy:0.0000}   # 0..1, higher is better");
+            writer($"Accuracy (macro):                  {metrics.MacroAccuracy:0.0000}   # 0..1, higher is better");
+            writer($"Top-K accuracy:                    [{string.Join(", ", metrics?.TopKAccuracyForAllK?.Select(a => $"{a:0.0000}") ?? new string[] { "Set topKPredictionCount in evaluator to view" })}]   # 0..1, higher is better");
+            writer($"Log-loss reduction:                {metrics.LogLossReduction:0.0000;-0.000}   # -Inf..1, higher is better");
+            writer($"Log-loss:                          {metrics.LogLoss:0.0000}   # 0..Inf, lower is better");
+            writer("\nPer class metrics");
             for (int i = 0; i < metrics.PerClassLogLoss.Count; i++)
             {
-                Console.WriteLine($"LogLoss for class {i} ({classNames[i] + "):",-11}   {metrics.PerClassLogLoss[i]:0.0000}   # 0..Inf, lower is better");
+                writer($"LogLoss for class {i} ({classNames[i] + "):",-11}   {metrics.PerClassLogLoss[i]:0.0000}   # 0..Inf, lower is better");
             }
             for (int i = 0; i < metrics.PerClassLogLoss.Count; i++)
             {
-                Console.WriteLine($"Precision for class {i} ({classNames[i] + "):",-11} {metrics.ConfusionMatrix.PerClassPrecision[i]:0.0000}   # 0..1, higher is better");
+                writer($"Precision for class {i} ({classNames[i] + "):",-11} {metrics.ConfusionMatrix.PerClassPrecision[i]:0.0000}   # 0..1, higher is better");
             }
             for (int i = 0; i < metrics.PerClassLogLoss.Count; i++)
             {
-                Console.WriteLine($"Recall for class {i} ({classNames[i] + "):",-11}    {metrics.ConfusionMatrix.PerClassRecall[i]:0.0000}   # 0..1, higher is better");
+                writer($"Recall for class {i} ({classNames[i] + "):",-11}    {metrics.ConfusionMatrix.PerClassRecall[i]:0.0000}   # 0..1, higher is better");
             }
-            Console.WriteLine();
-            Console.WriteLine(metrics.ConfusionMatrix.GetFormattedConfusionTable());
-            Console.WriteLine($"************************************************************");
+            writer("");
+            writer(metrics.ConfusionMatrix.GetFormattedConfusionTable());
+            writer($"************************************************************");
         }
 
 
-        internal static void PrintIterationMetrics(int iteration, string trainerName, MulticlassClassificationMetrics metrics, double? runtimeInSeconds)
+        internal static void PrintIterationMetrics(int iteration, string trainerName, MulticlassClassificationMetrics metrics, double? runtimeInSeconds, Action<string> writer)
         {
-            CreateRow($"{iteration,-4} {trainerName,-35} {metrics?.MicroAccuracy ?? double.NaN,14:F4} {metrics?.MacroAccuracy ?? double.NaN,14:F4} {metrics?.LogLossReduction ?? double.NaN,17:F4} {runtimeInSeconds.Value,9:F1}", Width);
+            CreateRow($"{iteration,-4} {trainerName,-35} {metrics?.MicroAccuracy ?? double.NaN,14:F4} {metrics?.MacroAccuracy ?? double.NaN,14:F4} {metrics?.LogLossReduction ?? double.NaN,17:F4} {runtimeInSeconds.Value,9:F1}", Width, writer);
         }
 
-        internal static void PrintIterationException(Exception ex)
+        internal static void PrintIterationException(Exception ex, Action<string> writer)
         {
-            Console.WriteLine($"Exception during AutoML iteration: {ex}");
+            writer($"Exception during AutoML iteration: {ex}");
         }
 
-        internal static void PrintMulticlassClassificationMetricsHeader()
+        internal static void PrintMulticlassClassificationMetricsHeader(Action<string> writer)
         {
-            CreateRow($"{"",-4} {"Trainer",-35} {"MicroAccuracy",14} {"MacroAccuracy",14} {"LogLossReduction",17} {"Duration",9}", Width);
+            CreateRow($"{"",-4} {"Trainer",-35} {"MicroAccuracy",14} {"MacroAccuracy",14} {"LogLossReduction",17} {"Duration",9}", Width, writer);
         }
 
-        private static void CreateRow(string message, int width)
+        private static void CreateRow(string message, int width, Action<string> writer)
         {
-            Console.WriteLine(Thread.CurrentThread.Name + ": |" + message.PadRight(width - 2) + "|");
+            writer(Thread.CurrentThread.Name + ": |" + message.PadRight(width - 2) + "|");
         }
 
-        public static void PrintMulticlassClassificationFoldsAverageMetrics(IEnumerable<TrainCatalogBase.CrossValidationResult<MulticlassClassificationMetrics>> crossValResults)
+        public static void PrintMulticlassClassificationFoldsAverageMetrics(IEnumerable<TrainCatalogBase.CrossValidationResult<MulticlassClassificationMetrics>> crossValResults, Action<string> writer)
         {
             var metricsInMultipleFolds = crossValResults.Select(r => r.Metrics);
 
@@ -863,14 +871,14 @@ namespace ImgurClassifier.ConsoleApp
             var logLossReductionStdDeviation = CalculateStandardDeviation(logLossReductionValues);
             var logLossReductionConfidenceInterval95 = CalculateConfidenceInterval95(logLossReductionValues);
 
-            Console.WriteLine($"*************************************************************************************************************");
-            Console.WriteLine($"*       Metrics for Multi-class Classification model      ");
-            Console.WriteLine($"*------------------------------------------------------------------------------------------------------------");
-            Console.WriteLine($"*       Average MicroAccuracy:    {microAccuracyAverage:0.###}  - Standard deviation: ({microAccuraciesStdDeviation:#.###})  - Confidence Interval 95%: ({microAccuraciesConfidenceInterval95:#.###})");
-            Console.WriteLine($"*       Average MacroAccuracy:    {macroAccuracyAverage:0.###}  - Standard deviation: ({macroAccuraciesStdDeviation:#.###})  - Confidence Interval 95%: ({macroAccuraciesConfidenceInterval95:#.###})");
-            Console.WriteLine($"*       Average LogLoss:          {logLossAverage:#.###}  - Standard deviation: ({logLossStdDeviation:#.###})  - Confidence Interval 95%: ({logLossConfidenceInterval95:#.###})");
-            Console.WriteLine($"*       Average LogLossReduction: {logLossReductionAverage:#.###}  - Standard deviation: ({logLossReductionStdDeviation:#.###})  - Confidence Interval 95%: ({logLossReductionConfidenceInterval95:#.###})");
-            Console.WriteLine($"*************************************************************************************************************");
+            writer($"*************************************************************************************************************");
+            writer($"*       Metrics for Multi-class Classification model      ");
+            writer($"*------------------------------------------------------------------------------------------------------------");
+            writer($"*       Average MicroAccuracy:    {microAccuracyAverage:0.###}  - Standard deviation: ({microAccuraciesStdDeviation:#.###})  - Confidence Interval 95%: ({microAccuraciesConfidenceInterval95:#.###})");
+            writer($"*       Average MacroAccuracy:    {macroAccuracyAverage:0.###}  - Standard deviation: ({macroAccuraciesStdDeviation:#.###})  - Confidence Interval 95%: ({macroAccuraciesConfidenceInterval95:#.###})");
+            writer($"*       Average LogLoss:          {logLossAverage:#.###}  - Standard deviation: ({logLossStdDeviation:#.###})  - Confidence Interval 95%: ({logLossConfidenceInterval95:#.###})");
+            writer($"*       Average LogLossReduction: {logLossReductionAverage:#.###}  - Standard deviation: ({logLossReductionStdDeviation:#.###})  - Confidence Interval 95%: ({logLossReductionConfidenceInterval95:#.###})");
+            writer($"*************************************************************************************************************");
         }
 
         public static double CalculateStandardDeviation(IEnumerable<double> values)

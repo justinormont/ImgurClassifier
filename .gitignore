@@ -1,3 +1,7 @@
+# Output ML.NET model & log
+ImgurClassifier.Model/MLModel.zip
+ImgurClassifier.Model/log.txt
+
 # globs
 Makefile.in
 *.userprefs
