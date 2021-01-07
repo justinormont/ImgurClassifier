@@ -10,6 +10,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using Microsoft.ML.Trainers.FastTree;
 using Microsoft.ML.Transforms;
+using Microsoft.ML.Transforms.Text;
 
 namespace ImgurClassifier.ConsoleApp
 {
@@ -61,7 +62,7 @@ namespace ImgurClassifier.ConsoleApp
 
             // Build training pipeline
             //IEstimator<ITransformer> trainingPipeline = BuildTrainingPipeline(mlContext);
-            IEstimator<ITransformer> trainingPipeline = BuildTrainingPipelineUsingAutoML(mlContext, trainingDataView, validationDataView, useAutoML: true, writeLogLine);
+            IEstimator<ITransformer> trainingPipeline = BuildTrainingPipelineUsing(mlContext, trainingDataView, validationDataView, useAutoML: true, writeLogLine);
 
             // Train Model
             ITransformer mlModel = TrainModel(mlContext, trainingDataView, trainingPipeline, writeLogLine);
@@ -76,74 +77,8 @@ namespace ImgurClassifier.ConsoleApp
             PrintProxyModelWeights(mlContext, trainingDataView, trainingPipeline, writeLogLine);
         }
 
-        /*public static IEstimator<ITransformer> BuildTrainingPipeline(MLContext mlContext)
-        {
-            // Data process configuration with pipeline data transformations 
-            var dataProcessPipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", "Label")
-                // Reset the Weight column to "1.0"
-                .Append(mlContext.Transforms.Expression("Weight", "x : 1.0f", new[] { "Weight" }))
-
-                // Numeric features
-                .Append(mlContext.Transforms.Concatenate("FeaturesNumeric", new[] { "tagAvgFollowers", "tagSumFollowers", "tagAvgTotalItems", "tagSumTotalItems", "imagesCount" }))
-
-                // Categorical features
-                .Append(mlContext.Transforms.Categorical.OneHotEncoding(new[] { new InputOutputColumnPair("img1Type", "img1Type"), new InputOutputColumnPair("img2Type", "img2Type"), new InputOutputColumnPair("img3Type", "img3Type") }))
-                .Append(mlContext.Transforms.Concatenate("FeaturesCategorical", new[] { "img1Type", "img2Type", "img3Type" }))
-
-                // Text features
-                .Append(mlContext.Transforms.Text.FeaturizeText("imgDesc_tf", null, new[] { "img1Desc", "img2Desc", "img3Desc" }))
-                .Append(mlContext.Transforms.Text.FeaturizeText("tags_tf", "tags"))
-                .Append(mlContext.Transforms.Text.FeaturizeText("title_tf", "title"))
-                .Append(mlContext.Transforms.Concatenate("FeaturesText", new[] { "title_tf", "tags_tf", "imgDesc_tf" }))
-
-                // Model stacking using an Averaged Perceptron on the text features
-                //.Append(mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "FeaturesText", numberOfIterations: 10), labelColumnName: "Label"))
-                //.Append(mlContext.Transforms.Concatenate("FeaturesStackedAPOnText", new[] { "Score" })) // Score column from the stacked trainer
-
-                // Image features
-                .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img1FileName"))
-                .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
-                .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
-                .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage1", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
-
-                .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img2FileName"))
-                .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
-                .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
-                .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage2", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
-
-                .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img3FileName"))
-                .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
-                .Append(mlContext.Transforms.ExtractPixels("Pixels", "ImageObject"))
-                .Append(mlContext.Transforms.DnnFeaturizeImage("FeaturesImage3", m => m.ModelSelector.ResNet18(mlContext, m.OutputColumn, m.InputColumn), "Pixels"))
-                (
-                .Append(mlContext.Transforms.Concatenate("FeaturesImage", new[] { "FeaturesImage1" "FeaturesImage2", "FeaturesImage3" }))
-                .AppendCacheCheckpoint(env: mlContext) // Cache checkpoint since the DnnFeaturizeImage is slow
-
-                // Model stacking using a logistic regression on the image features to re-learn the output layer of the ResNet model(s) 
-                .Append(mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(labelColumnName: "Label", featureColumnName: "FeaturesImage"))
-                .Append(mlContext.Transforms.Concatenate("FeaturesStackedLROnImages", new[] { "Score" })) // Score column from the stacked trainer
-
-                .Append(mlContext.Transforms.Concatenate("Features", new[] {
-                    "FeaturesNumeric",
-                    "FeaturesCategorical",
-                    "FeaturesText",
-                    //"FeaturesStackedAPOnText",
-                    //"FeaturesImage",
-                    "FeaturesStackedLROnImages",
-                }))
-                .AppendCacheCheckpoint(mlContext);
-
-            // Set the training algorithm 
-            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label")
-            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features"), labelColumnName: "Label")
-            var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label")
-                                      .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
-            var trainingPipeline = dataProcessPipeline.Append(trainer);
-
-            return trainingPipeline;
-        }*/
-
-        public static IEstimator<ITransformer> BuildTrainingPipelineUsingAutoML(MLContext mlContext, IDataView trainDataView, IDataView validationDataView, bool useAutoML, Action<string> writeLogLine)
+        
+        public static IEstimator<ITransformer> BuildTrainingPipelineUsing(MLContext mlContext, IDataView trainDataView, IDataView validationDataView, bool useAutoML, Action<string> writeLogLine)
         {
 
             ExperimentResult<MulticlassClassificationMetrics> experimentResult1 = null;
@@ -189,11 +124,8 @@ namespace ImgurClassifier.ConsoleApp
                 .Append(mlContext.Transforms.Categorical.OneHotEncoding(new[] { new InputOutputColumnPair("img1Type", "img1Type"), new InputOutputColumnPair("img2Type", "img2Type"), new InputOutputColumnPair("img3Type", "img3Type") }))
                 .Append(mlContext.Transforms.Concatenate("FeaturesCategorical", new[] { "img1Type", "img2Type", "img3Type" }))
 
-                // Text features
-                .Append(mlContext.Transforms.Text.FeaturizeText("imgDesc_tf", null, new[] { "img1Desc", "img2Desc", "img3Desc" }))
-                .Append(mlContext.Transforms.Text.FeaturizeText("tags_tf", "tags"))
-                .Append(mlContext.Transforms.Text.FeaturizeText("title_tf", "title"))
-                .Append(mlContext.Transforms.Concatenate("FeaturesText", new[] { "title_tf", "tags_tf", "imgDesc_tf" }))
+                 // Text features (bigrams + trichargrams)
+                 .Append(mlContext.Transforms.Text.FeaturizeText("FeaturesText", new TextFeaturizingEstimator.Options() { OutputTokensColumnName = "TokensForWordEmbedding" }, new[] { "title", "img1Desc", "img2Desc", "img3Desc" })) // TokensForWordEmbedding is later used by the word embedding transform
 
                 // Model stacking using an Averaged Perceptron on the text features
                 .AppendCacheCheckpoint(env: mlContext) // Cache checkpoint since the OVA Averaged Perceptron makes many passes of its data
@@ -234,6 +166,15 @@ namespace ImgurClassifier.ConsoleApp
                 .Append(mlContext.Regression.Trainers.FastTreeTweedie(labelColumnName: "postScoreLog", featureColumnName: "FeaturesForStackedModel", exampleWeightColumnName: "Weight"))
                 .Append(mlContext.Transforms.Concatenate("FeaturesStackedFastTreeTweedieToPostScoreLog", new[] { "Score" })) // Score column from the stacked trainer
 
+                // Word Emeddings
+                .Append(mlContext.Transforms.Text.ApplyWordEmbedding("FeaturesWordEmbedding", "TokensForWordEmbedding", WordEmbeddingEstimator.PretrainedModelKind.FastTextWikipedia300D))
+                .Append(mlContext.Transforms.NormalizeMinMax("FeaturesWordEmbedding", "FeaturesWordEmbedding"))
+
+                // Model stacking using an AveragedPerceptron on the word embedding features
+                .AppendCacheCheckpoint(env: mlContext) // Cache checkpoint since the OVA Averaged Perceptron makes many passes of its data
+                .Append(mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "FeaturesWordEmbedding", numberOfIterations: 10), labelColumnName: "Label"))
+                .Append(mlContext.Transforms.Concatenate("FeaturesStackedAPOnWordEmbeddings", new[] { "Score" })) // Score column from the stacked trainer
+
                 // Image features
                 .Append(mlContext.Transforms.LoadImages("ImageObject", basepath, "img1FileName"))
                 .Append(mlContext.Transforms.ResizeImages("ImageObject", imageWidth: 224, imageHeight: 224))
@@ -259,8 +200,6 @@ namespace ImgurClassifier.ConsoleApp
                     .Append(experimentResult2.BestRun.Estimator)
                     .Append(mlContext.Transforms.Concatenate("FeaturesStackedAutoMLOnImages", new[] { "Score" })) // Score column from the stacked trainer
                     .AppendCacheCheckpoint(env: mlContext); // Cache checkpoint since the DnnFeaturizeImage is slow
-
-                var automlFeatureColumns = new[] { "FeaturesStackedAutoMLOnTextCatNum", "FeaturesStackedAutoMLOnImages" };
             }
 
             dataProcessPipeline = dataProcessPipeline
@@ -271,10 +210,12 @@ namespace ImgurClassifier.ConsoleApp
                         "FeaturesText",
                         "FeaturesStackedAPOnText",
                         //"FeaturesImage",
+                        //"FeaturesWordEmbedding",
                         "FeaturesStackedLROnImages",
                         "FeaturesStackedFastTreeTweedieToPostScoreLog",
                         "FeaturesStringStatistics",
                         "FeaturesStackedLGBMOnStringStats",
+                        "FeaturesStackedAPOnWordEmbeddings",
                         "FeaturesKMeansClusterDistanceOnNumeric",
                         "FeaturesKMeansClusterDistanceOnStringStats",
                     }
@@ -287,9 +228,9 @@ namespace ImgurClassifier.ConsoleApp
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label");
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight", minimumExampleCountPerLeaf: 2), labelColumnName: "Label");
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LinearSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
-            var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LdSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LdSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastForest(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
-            //var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
+            var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
                     
             var trainingPipeline = dataProcessPipeline.Append(trainer).Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
 
@@ -357,8 +298,9 @@ namespace ImgurClassifier.ConsoleApp
             var experimentSettings = new MulticlassExperimentSettings
             {
                 MaxExperimentTimeInSeconds = 3600,
-                OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
+                //OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
                 //OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
+                OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
             };
 
             // Set the column purposes for a subset of columns; the rest are auto-inferred
@@ -430,8 +372,9 @@ namespace ImgurClassifier.ConsoleApp
             var experimentSettings = new MulticlassExperimentSettings
             {
                 MaxExperimentTimeInSeconds = 40 * 60,
-                OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
+                //OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
                 //OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
+                OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
             };
 
             // Set the column purposes for a subset of columns; the rest are auto-inferred
@@ -569,7 +512,6 @@ namespace ImgurClassifier.ConsoleApp
                 rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
             };
 
-            // Convert the Key
             var pipeline = trainingPipeline
                 // Convert the Key type to a Float (so we can use a regression trainer)
                 .Append(mlContext.Transforms.CustomMapping(actionConvertKeyToFloat, "Label"))
@@ -611,7 +553,7 @@ namespace ImgurClassifier.ConsoleApp
                 .Take(100)
                 .Select((tuple, featureImportanceIndex) => $"{featureImportanceIndex, -3} {tuple.featureImportance, -14}: {tuple.featureName}");
 
-            writeLogLine($"\nFeature importance: (top 100 of {weightsValues.Length})");
+            writeLogLine($"\nFeature importance: (top 100 of {weightsValues.Length:n0})");
             writeLogLine(String.Join("\n", slotWeightText));
         }
 

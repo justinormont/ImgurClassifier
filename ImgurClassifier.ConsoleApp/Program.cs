@@ -97,7 +97,7 @@ namespace ImgurClassifier.ConsoleApp
 
         private static void FileLogger(object sender, LoggingEventArgs e)
         {
-            if ((e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Error || e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Warning || (e.Source == "AutoML" && !e.RawMessage.StartsWith("[Source="))) && !e.RawMessage.StartsWith("Encountered imag"))
+            if ((e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Error || e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Warning || e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Info || (e.Source == "AutoML" && !e.RawMessage.StartsWith("[Source="))) && !e.RawMessage.StartsWith("Encountered imag"))
             {
                 LogToFile($"{DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")} {e.Message}", false);
             }
