@@ -167,7 +167,7 @@ namespace ImgurClassifier.ConsoleApp
                 .Append(mlContext.Transforms.Concatenate("FeaturesStackedFastTreeTweedieToPostScoreLog", new[] { "Score" })) // Score column from the stacked trainer
 
                 // Word Emeddings
-                .Append(mlContext.Transforms.Text.ApplyWordEmbedding("FeaturesWordEmbedding", "TokensForWordEmbedding", WordEmbeddingEstimator.PretrainedModelKind.FastTextWikipedia300D))
+                .Append(mlContext.Transforms.Text.ApplyWordEmbedding("FeaturesWordEmbedding", "TokensForWordEmbedding", WordEmbeddingEstimator.PretrainedModelKind.FastTextWikipedia300D)) // todo: file bug that the word embedding transform doesn't add slot names. Perhaps just slot000...slot900? Or have it default to that in the concat for unnamed slot?
                 .Append(mlContext.Transforms.NormalizeMinMax("FeaturesWordEmbedding", "FeaturesWordEmbedding"))
 
                 // Model stacking using an AveragedPerceptron on the word embedding features
@@ -202,25 +202,29 @@ namespace ImgurClassifier.ConsoleApp
                     .AppendCacheCheckpoint(env: mlContext); // Cache checkpoint since the DnnFeaturizeImage is slow
             }
 
+
+            string[] availableColumns = new[] {
+                    "FeaturesNumeric",
+                    "FeaturesCategorical",
+                    "FeaturesText",
+                    "FeaturesStackedAPOnText",
+                    //"FeaturesImage",
+                    //"FeaturesWordEmbedding",
+                    "FeaturesStackedLROnImages",
+                    "FeaturesStackedFastTreeTweedieToPostScoreLog",
+                    "FeaturesStringStatistics",
+                    "FeaturesStackedLGBMOnStringStats",
+                    "FeaturesStackedAPOnWordEmbeddings",
+                    "FeaturesKMeansClusterDistanceOnNumeric",
+                    "FeaturesKMeansClusterDistanceOnStringStats",
+                }
+                // Concatenate the AutoML features if enabled
+                .Concat(useAutoML ? new[] { "FeaturesStackedAutoMLOnText", "FeaturesStackedAutoMLOnImages" } : new string[] { }).ToArray();
+
+            var columnsToUse = AutoColumnSelector(mlContext, validationDataView, trainDataView, availableColumns, dataProcessPipeline, FeatureSelection.BackwardsSelection, writeLogLine);
+            
             dataProcessPipeline = dataProcessPipeline
-                .Append(mlContext.Transforms.Concatenate("Features",
-                    new[] {
-                        "FeaturesNumeric",
-                        "FeaturesCategorical",
-                        "FeaturesText",
-                        "FeaturesStackedAPOnText",
-                        //"FeaturesImage",
-                        //"FeaturesWordEmbedding",
-                        "FeaturesStackedLROnImages",
-                        "FeaturesStackedFastTreeTweedieToPostScoreLog",
-                        "FeaturesStringStatistics",
-                        "FeaturesStackedLGBMOnStringStats",
-                        "FeaturesStackedAPOnWordEmbeddings",
-                        "FeaturesKMeansClusterDistanceOnNumeric",
-                        "FeaturesKMeansClusterDistanceOnStringStats",
-                    }
-                    // Concatenate the AutoML features if enabled
-                    .Concat(useAutoML ? new[] { "FeaturesStackedAutoMLOnText", "FeaturesStackedAutoMLOnImages" } : new string[] { }).ToArray()))
+                .Append(mlContext.Transforms.Concatenate("Features", columnsToUse.ToArray()))
                 .AppendCacheCheckpoint(mlContext);
 
 
@@ -230,27 +234,199 @@ namespace ImgurClassifier.ConsoleApp
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LinearSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LdSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastForest(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
-            var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
-                    
+            //var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
+            var trainer = mlContext.MulticlassClassification.Trainers.LightGbm(exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
+
             var trainingPipeline = dataProcessPipeline.Append(trainer).Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
 
             return trainingPipeline;
         }
 
 
-        public static ITransformer TrainModel(MLContext mlContext, IDataView trainingDataView, IEstimator<ITransformer> trainingPipeline, Action<string> writeLogLine)
+        public static ITransformer TrainModel(MLContext mlContext, IDataView trainDataView, IEstimator<ITransformer> trainingPipeline, Action<string> writeLogLine)
         {
             var sw = new Stopwatch();
             sw.Start();
 
             writeLogLine("=============== Training  model ===============");
 
-            ITransformer model = trainingPipeline.Fit(trainingDataView);
+            ITransformer model = trainingPipeline.Fit(trainDataView);
 
             writeLogLine($"=============== End of training process ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
             return model;
         }
 
+
+        // Feature selection on the column level to choose the best combination of columns
+        private static IEnumerable<string> AutoColumnSelector(MLContext mlContext, IDataView validationDataView, IDataView trainingDataView, IEnumerable<string> columnNames, IEstimator<ITransformer> trainingPipeline, FeatureSelection searchPattern, Action<string> writeLogLine)
+        {
+            var sw = new Stopwatch();
+            sw.Start();
+
+            writeLogLine("=============== Sweeping featurization columns ===============");
+
+            var columnList = columnNames.ToArray();
+            var columnsToPrefetch = columnNames.Union(new[] { "Label", "Weight" }).ToArray();
+            
+            var fitPipeline = trainingPipeline.Fit(trainingDataView);
+            var transformedTrainingDataView = mlContext.Data.Cache(fitPipeline.Transform(trainingDataView), columnsToPrefetch: columnsToPrefetch);
+            var transformedValidationDataView = mlContext.Data.Cache(fitPipeline.Transform(validationDataView), columnsToPrefetch: columnsToPrefetch);
+
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label");
+            var trainer = mlContext.MulticlassClassification.Trainers.LightGbm(labelColumnName: "Label", featureColumnName: "Features");
+            //string[] bestSetOfColumns = null;
+            HashSet<string> bestSetOfColumns = new();
+            double bestMetric = double.NaN;
+
+            
+            writeLogLine($"{"",9} {"MicroAccuracy",14} {"MacroAccuracy",14} {"LogLossReduction",17} {"Duration",9} TrainingColumns");
+
+            // Define action to use within the switch statement below
+            Func<string[], int, string, (double, double)> actionTrainOnColumnsAndUpdateBest = (string[] columnsForIteration, int i, string total) =>
+            {
+                var sw2 = new Stopwatch();
+                sw2.Start();
+                double gain = double.NaN;
+                double metric = double.NaN;
+                try
+                {
+                    var pipelineForIteration = mlContext.Transforms.Concatenate("Features", columnsForIteration).Append(trainer);
+                    var model = pipelineForIteration.Fit(transformedTrainingDataView);
+                    var predictions = model.Transform(transformedValidationDataView);
+                    var metrics = mlContext.MulticlassClassification.Evaluate(predictions, "Label", "Score");
+                    metric = Math.Sqrt(metrics.MicroAccuracy * metrics.MacroAccuracy);
+                    gain = metric - (!double.IsNaN(bestMetric) ? bestMetric : double.NegativeInfinity); // Assumes higher is better
+
+                    if (metric > bestMetric || double.IsNaN(bestMetric))
+                    {
+                        writeLogLine($"New leader: {metric:F4}");
+                        bestMetric = metric;
+                        bestSetOfColumns = new HashSet<string>(columnsForIteration);
+                    }
+                    
+                    writeLogLine($"{i + " of " + total,9} {metrics?.MicroAccuracy ?? double.NaN,14:F4} {metrics?.MacroAccuracy ?? double.NaN,14:F4} {metrics?.LogLossReduction ?? double.NaN,17:F4} {sw2.ElapsedMilliseconds / 1000.0,9:F1} cols=[{string.Join(", ", columnsForIteration)}]");
+                }
+                catch (Exception e)
+                {
+                    writeLogLine($"Iteration {i} failed. cols=[{string.Join(", ", columnsForIteration)}] duration={sw2.ElapsedMilliseconds / 1000.0,9:F1} error={e}");
+                }
+                return (gain, metric);
+            };
+
+            
+            switch (searchPattern)
+            {
+                case FeatureSelection.ExhaustiveSearch: // O(2^N); boolean combinatorics of each column on/off
+                    {
+                        var count = Math.Pow(2, columnList.Length);
+                        for (var i = 1; i < count; i++) // i=0 would be no columns, so start at 1
+                        {
+                            var columnsForIteration = columnList.Where((_, j) => ((i >> j) & 1) == 1).ToArray(); 
+                            actionTrainOnColumnsAndUpdateBest(columnsForIteration, i, count.ToString());
+                        }
+                        break;
+                    }
+
+                case FeatureSelection.OnePassRemoval: // O(N); tries removing each column; remove if no improvement to metrics
+                {
+                        var removedColumns = new HashSet<string>();
+                        actionTrainOnColumnsAndUpdateBest(columnList, 0, columnList.Length.ToString()); // Baseline to set bestMetric
+
+                        for (var i = 0; i < columnList.Length; i++) 
+                        {
+                            var columnsForIteration = columnList.Where((col, j) => (j != i && !removedColumns.Contains(col))).ToArray();
+                            var (gain, metric) = actionTrainOnColumnsAndUpdateBest(columnsForIteration, i + 1, (columnList.Length + 1).ToString());
+                            if (gain > 0) // If better without the column, remove it
+                                removedColumns.Add(columnList[i]);
+                        }
+                        break;
+                    }
+
+                case FeatureSelection.ForwardSelection: // O(N^2); iteratively add the next best column after each pass
+                    {
+                        double bestMetricOverall = double.NegativeInfinity;
+                        HashSet<string> currentSetOfColumns = new();
+                        string bestNextColumn;
+                        int count = 0;
+                        do
+                        {
+                            bestNextColumn = null;
+                            int countBeforePass = count;
+                            for (var i = 0; i < columnList.Length; i++)
+                            {
+                                if (currentSetOfColumns.Contains(columnList[i]))
+                                    continue; // No need to try this column, it's already selected
+                                var columnsForIteration = columnList.Where((col, j) => (j == i || currentSetOfColumns.Contains(col))).ToArray();
+                                var (gain, metric) = actionTrainOnColumnsAndUpdateBest(columnsForIteration, count++, $"<={Math.Pow(columnList.Length - currentSetOfColumns.Count(), 2) / 2 + countBeforePass}");
+                                if (metric > bestMetricOverall)
+                                {
+                                    bestMetricOverall = metric;
+                                    bestNextColumn = columnList[i];
+                                }
+                            }
+
+                            if (bestNextColumn != null)
+                                currentSetOfColumns.Add(bestNextColumn);
+                        }
+                        while (bestNextColumn != null);
+                        break;
+                    }
+
+                case FeatureSelection.BackwardsSelection: // O(N^2); iteratively remove the next worst column after each pass
+                    {
+                        double bestMetricOverall = double.NegativeInfinity;
+                        HashSet<string> currentSetOfColumns = new(columnList);
+                        string worstNextColumn;
+                        int count = 0;
+                        actionTrainOnColumnsAndUpdateBest(columnList, count++, $"<={Math.Pow(columnList.Length, 2) / 2}"); // Baseline to set bestMetric
+
+                        do
+                        {
+                            worstNextColumn = null;
+                            int countBeforePass = count;
+                            for (var i = 0; i < columnList.Length; i++)
+                            {
+                                if (!currentSetOfColumns.Contains(columnList[i]))
+                                    continue; // No need to try this column, it's already selected
+                                var columnsForIteration = columnList.Where((col, j) => (j != i && currentSetOfColumns.Contains(col))).ToArray();
+                                var (gain, metric) = actionTrainOnColumnsAndUpdateBest(columnsForIteration, count++, $"<={Math.Pow(columnList.Length, 2) / 2}");
+                                if (metric >= bestMetricOverall)
+                                {
+                                    bestMetricOverall = metric;
+                                    worstNextColumn = columnList[i];
+                                }
+                            }
+
+                            if (worstNextColumn != null)
+                                currentSetOfColumns.Remove(worstNextColumn);
+                        }
+                        while (worstNextColumn != null);
+                        break;
+                    }
+                default:
+                    throw new Exception($"Unknown search scheme: {searchPattern}");
+            }
+
+            
+
+            
+            var selectedColumns = columnList.Where(col => bestSetOfColumns.Contains(col));
+            var nonSelectedColumns = columnList.Where(col => !bestSetOfColumns.Contains(col));
+
+            writeLogLine($"Best set of columns: [{string.Join(", ", selectedColumns)}]");
+            writeLogLine($"Removed columns: [{string.Join(", ", nonSelectedColumns)}]");
+            writeLogLine($"=============== End of sweeping featurization columns ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
+
+            return selectedColumns;
+        }
+
+        private enum FeatureSelection
+        {
+            ExhaustiveSearch = 1,
+            OnePassRemoval = 2,
+            ForwardSelection = 3,
+            BackwardsSelection = 4,
+        } 
 
         private static void EvaluateModel(MLContext mlContext, ITransformer mlModel, IDataView testDataView, Action<string> writeLogLine)
         {
@@ -330,7 +506,8 @@ namespace ImgurClassifier.ConsoleApp
 
             columnsToIgnore.ForEach(a => columnInformation.IgnoredColumnNames.Add(a));
 
-            experimentResult = mlContext.Auto()
+            MLContext mlContextTmp = new MLContext(); // todo: log bug that AutoML is canceling the main MLContext as time expires
+            experimentResult = mlContextTmp.Auto()
                 .CreateMulticlassClassificationExperiment(experimentSettings)
                 .Execute(
                     trainData: trainDataView,
@@ -444,7 +621,8 @@ namespace ImgurClassifier.ConsoleApp
             trainDataView = mlContext.Data.Cache(trainDataView, new[] { "Label", "Weight", "FeaturesImage" }); // Cache checkpoint since the DnnFeaturizeImage is slow
             validationDataView = mlContext.Data.Cache(validationDataView, new[] { "Label", "Weight", "FeaturesImage" }); // Cache checkpoint since the DnnFeaturizeImage is slow
 
-            experimentResult = mlContext.Auto()
+            MLContext mlContextTmp = new MLContext(); // todo: log bug that AutoML is canceling the main MLContext as time expires
+            experimentResult = mlContextTmp.Auto()
                 .CreateMulticlassClassificationExperiment(experimentSettings)
                 .Execute(
                     //trainData: mlContext.Data.TakeRows(mlContext.Data.ShuffleRows(input: trainDataView, shufflePoolSize: 5000), 100),
@@ -490,7 +668,7 @@ namespace ImgurClassifier.ConsoleApp
                 LabelColumnName = "FloatLabel",
                 FeatureColumnName = "Features",
                 ExampleWeightColumnName = "Weight",
-                ExecutionTime = true,
+                //ExecutionTime = true,
                 
                 // Shuffle the label ordering before each tree is learned.
                 // Needed when running a multi-class dataset as regression.
