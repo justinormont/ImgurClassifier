@@ -166,7 +166,15 @@ namespace ImgurClassifier.ConsoleApp
                 .Append(mlContext.Regression.Trainers.FastTreeTweedie(labelColumnName: "postScoreLog", featureColumnName: "FeaturesForStackedModel", exampleWeightColumnName: "Weight"))
                 .Append(mlContext.Transforms.Concatenate("FeaturesStackedFastTreeTweedieToPostScoreLog", new[] { "Score" })) // Score column from the stacked trainer
 
-                // Word Emeddings
+                // Tree Featurizer using a random forest regression model // todo: figure out why the tree feat isn't working here
+                //.Append(mlContext.Transforms.Concatenate("FeaturesForTreeFeat", new[] { "FeaturesNumeric", "FeaturesCategorical", "FeaturesText", }))
+                //.Append(mlContext.Transforms.CustomMapping(new ConvertLabelKeyToFloat().GetMapping(), "ConvertLabelKeyToFloat")) // Convert the Key type Label to a Float (so we can use a regression trainer on multiclass)
+                //.Append(mlContext.Transforms.FeaturizeByFastForestRegression(options: new FastForestRegressionFeaturizationEstimator.Options { InputColumnName = "FeaturesForTreeFeat", TreesColumnName = "FeaturesTreeFeatTrees", LeavesColumnName = "FeaturesTreeFeatLeaves", PathsColumnName = "FeaturesTreeFeatPaths", TrainerOptions = new FastForestRegressionTrainer.Options { LabelColumnName = "FloatLabel", FeatureColumnName = "FeaturesForTreeFeat", ExampleWeightColumnName = "Weight", ShuffleLabels = true, /* Shuffle the label ordering before each tree is learned. Needed when running a multi-class dataset as regression. */ } }))
+                
+
+                .Append(mlContext.Transforms.Concatenate("FeaturesTreeFeat", new[] { "FeaturesTreeFeatLeaves" })) // Leaves column from the stacked tree featurizer model
+
+                // Word Embeddings
                 .Append(mlContext.Transforms.Text.ApplyWordEmbedding("FeaturesWordEmbedding", "TokensForWordEmbedding", WordEmbeddingEstimator.PretrainedModelKind.FastTextWikipedia300D)) // todo: file bug that the word embedding transform doesn't add slot names. Perhaps just slot000...slot900? Or have it default to that in the concat for unnamed slot?
                 .Append(mlContext.Transforms.NormalizeMinMax("FeaturesWordEmbedding", "FeaturesWordEmbedding"))
 
@@ -208,8 +216,9 @@ namespace ImgurClassifier.ConsoleApp
                     "FeaturesCategorical",
                     "FeaturesText",
                     "FeaturesStackedAPOnText",
-                    //"FeaturesImage",
-                    //"FeaturesWordEmbedding",
+                    "FeaturesImage",
+                    //"FeaturesTreeFeat",
+                    "FeaturesWordEmbedding",
                     "FeaturesStackedLROnImages",
                     "FeaturesStackedFastTreeTweedieToPostScoreLog",
                     "FeaturesStringStatistics",
@@ -243,6 +252,12 @@ namespace ImgurClassifier.ConsoleApp
         }
 
 
+        private static Action<RowWithKey, RowWithFloat> actionConvertKeyToFloat = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
+        {
+            rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
+        };
+
+
         public static ITransformer TrainModel(MLContext mlContext, IDataView trainDataView, IEstimator<ITransformer> trainingPipeline, Action<string> writeLogLine)
         {
             var sw = new Stopwatch();
@@ -274,12 +289,10 @@ namespace ImgurClassifier.ConsoleApp
 
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label");
             var trainer = mlContext.MulticlassClassification.Trainers.LightGbm(labelColumnName: "Label", featureColumnName: "Features");
-            //string[] bestSetOfColumns = null;
             HashSet<string> bestSetOfColumns = new();
             double bestMetric = double.NaN;
 
-            
-            writeLogLine($"{"",9} {"MicroAccuracy",14} {"MacroAccuracy",14} {"LogLossReduction",17} {"Duration",9} TrainingColumns");
+            writeLogLine($"{"",11} {"MicroAccuracy",14} {"MacroAccuracy",14} {"LogLossReduction",17} {"Duration",9} TrainingColumns");
 
             // Define action to use within the switch statement below
             Func<string[], int, string, (double, double)> actionTrainOnColumnsAndUpdateBest = (string[] columnsForIteration, int i, string total) =>
@@ -294,7 +307,8 @@ namespace ImgurClassifier.ConsoleApp
                     var model = pipelineForIteration.Fit(transformedTrainingDataView);
                     var predictions = model.Transform(transformedValidationDataView);
                     var metrics = mlContext.MulticlassClassification.Evaluate(predictions, "Label", "Score");
-                    metric = Math.Sqrt(metrics.MicroAccuracy * metrics.MacroAccuracy);
+                    //metric = Math.Sqrt(metrics.MicroAccuracy * metrics.MacroAccuracy); // Geometric mean
+                    metric = metrics.MicroAccuracy * 0.8 + metrics.MacroAccuracy * 0.2; // Weighted arithmetic mean
                     gain = metric - (!double.IsNaN(bestMetric) ? bestMetric : double.NegativeInfinity); // Assumes higher is better
 
                     if (metric > bestMetric || double.IsNaN(bestMetric))
@@ -304,7 +318,7 @@ namespace ImgurClassifier.ConsoleApp
                         bestSetOfColumns = new HashSet<string>(columnsForIteration);
                     }
                     
-                    writeLogLine($"{i + " of " + total,9} {metrics?.MicroAccuracy ?? double.NaN,14:F4} {metrics?.MacroAccuracy ?? double.NaN,14:F4} {metrics?.LogLossReduction ?? double.NaN,17:F4} {sw2.ElapsedMilliseconds / 1000.0,9:F1} cols=[{string.Join(", ", columnsForIteration)}]");
+                    writeLogLine($"{i + " of " + total,11} {metrics?.MicroAccuracy ?? double.NaN,14:F4} {metrics?.MacroAccuracy ?? double.NaN,14:F4} {metrics?.LogLossReduction ?? double.NaN,17:F4} {sw2.ElapsedMilliseconds / 1000.0,9:F1} cols=[{string.Join(", ", columnsForIteration)}]");
                 }
                 catch (Exception e)
                 {
@@ -321,8 +335,39 @@ namespace ImgurClassifier.ConsoleApp
                         var count = Math.Pow(2, columnList.Length);
                         for (var i = 1; i < count; i++) // i=0 would be no columns, so start at 1
                         {
-                            var columnsForIteration = columnList.Where((_, j) => ((i >> j) & 1) == 1).ToArray(); 
+                            var columnsForIteration = columnList.Where((_, j) => ((i >> j) & 1) == 1).ToArray(); // Bit twiddling; shift and mask to read bits
                             actionTrainOnColumnsAndUpdateBest(columnsForIteration, i, count.ToString());
+                        }
+                        break;
+                    }
+
+                case FeatureSelection.RandomSearch: // O(C); try random subsets of the columns w/ early stopping
+                    {
+                        var earlyStoppingRounds = 50;
+                        var count = earlyStoppingRounds;
+                        var rand = new Random();
+                        var max = (int)Math.Pow(2, columnList.Length);
+                        var tried = new HashSet<int>();
+                        actionTrainOnColumnsAndUpdateBest(columnList, 0, count.ToString() + "+"); // Baseline with all columns
+
+                        for (var k = 1; k <= count; k++) // Iteration 0 is used for the baseline run, so start at 1
+                        {
+                            int i, randAttempts = 0;
+
+                            do
+                            {
+                                i = rand.Next(1, max); // i=0 would be no columns, so start at 1
+                                randAttempts++;
+                            }
+                            while (tried.Contains(i) && randAttempts < 10);
+
+                            if (randAttempts == 10)
+                                break; // Cound not find an new set of columns to try
+
+                            var columnsForIteration = columnList.Where((_, j) => ((i >> j) & 1) == 1).ToArray(); // Bit twiddling; shift and mask to read bits
+                            var (gain, _) = actionTrainOnColumnsAndUpdateBest(columnsForIteration, k, count.ToString() + "+");
+                            if (gain > 0)
+                                count = k + 50; // Extend limit for early stopping
                         }
                         break;
                     }
@@ -348,6 +393,8 @@ namespace ImgurClassifier.ConsoleApp
                         HashSet<string> currentSetOfColumns = new();
                         string bestNextColumn;
                         int count = 0;
+                        actionTrainOnColumnsAndUpdateBest(columnList, 0, columnList.Length.ToString()); // Baseline with all columns
+
                         do
                         {
                             bestNextColumn = null;
@@ -407,14 +454,11 @@ namespace ImgurClassifier.ConsoleApp
                     throw new Exception($"Unknown search scheme: {searchPattern}");
             }
 
-            
-
-            
             var selectedColumns = columnList.Where(col => bestSetOfColumns.Contains(col));
             var nonSelectedColumns = columnList.Where(col => !bestSetOfColumns.Contains(col));
 
-            writeLogLine($"Best set of columns: [{string.Join(", ", selectedColumns)}]");
             writeLogLine($"Removed columns: [{string.Join(", ", nonSelectedColumns)}]");
+            writeLogLine($"Best set of columns: [{string.Join(", ", selectedColumns)}]");
             writeLogLine($"=============== End of sweeping featurization columns ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
 
             return selectedColumns;
@@ -426,6 +470,7 @@ namespace ImgurClassifier.ConsoleApp
             OnePassRemoval = 2,
             ForwardSelection = 3,
             BackwardsSelection = 4,
+            RandomSearch = 5,
         } 
 
         private static void EvaluateModel(MLContext mlContext, ITransformer mlModel, IDataView testDataView, Action<string> writeLogLine)
@@ -685,10 +730,10 @@ namespace ImgurClassifier.ConsoleApp
                 TrainerOptions = trainerOptions
             };*/
 
-            Action<RowWithKey, RowWithFloat> actionConvertKeyToFloat = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
-            {
-                rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
-            };
+            //Action<RowWithKey, RowWithFloat> actionConvertKeyToFloat = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
+            //{
+            //    rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
+            //};
 
             var pipeline = trainingPipeline
                 // Convert the Key type to a Float (so we can use a regression trainer)
@@ -735,6 +780,19 @@ namespace ImgurClassifier.ConsoleApp
             writeLogLine(String.Join("\n", slotWeightText));
         }
 
+
+        #region ConvertLabelKeyToFloat CustomMapping
+        [CustomMappingFactoryAttribute("ConvertLabelKeyToFloat")]
+        private class ConvertLabelKeyToFloat : CustomMappingFactory<RowWithKey, RowWithFloat>
+        {
+            private static Action<RowWithKey, RowWithFloat> CustomAction = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
+            {
+                rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
+            };
+
+            public override Action<RowWithKey, RowWithFloat> GetMapping() => CustomAction;
+        }
+
         private class RowWithKey
         {
             [KeyType(99999)]
@@ -745,6 +803,8 @@ namespace ImgurClassifier.ConsoleApp
         {
             public float FloatLabel { get; set; }
         }
+        #endregion
+
 
         #region StringStatistics CustomMapping
         [CustomMappingFactoryAttribute("StringStatistics")]
@@ -964,7 +1024,8 @@ namespace ImgurClassifier.ConsoleApp
 
         private static void CreateRow(string message, int width, Action<string> writer)
         {
-            writer(Thread.CurrentThread.Name + ": |" + message.PadRight(width - 2) + "|");
+            var threadHeader = (string.IsNullOrEmpty(Thread.CurrentThread.Name) ? "" : Thread.CurrentThread.Name + ": ");
+            writer(threadHeader + "|" + message.PadRight(width - 2) + "|");
         }
 
         public static void PrintMulticlassClassificationFoldsAverageMetrics(IEnumerable<TrainCatalogBase.CrossValidationResult<MulticlassClassificationMetrics>> crossValResults, Action<string> writer)

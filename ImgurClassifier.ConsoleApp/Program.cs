@@ -22,14 +22,17 @@ namespace ImgurClassifier.ConsoleApp
         private static void Main(string[] args)
         {
 
-            Console.WriteLine("\n\n=============== Starting imgur classifier sample  ===============");
-
+            
             using (logFs = File.AppendText(LOG_FILEPATH))
             {
+                LogToFile("\n\n=============== Starting imgur classifier sample  ===============");
+
                 MLContext mlContext = new MLContext();
 
                 mlContext.Log += ConsoleLogger;
                 mlContext.Log += FileLogger;
+
+                LogToFile($"Log file: {LOG_FILEPATH}");
 
                 Dictionary<string, string> datasetSplits = DatasetDownloader.DatasetDownloader.GetDataset();
                 string trainFileName = datasetSplits["train"];
@@ -50,11 +53,12 @@ namespace ImgurClassifier.ConsoleApp
                 // Try a single prediction
                 ModelOutput predictionResult = predEngine.Predict(sampleData);
 
-                Console.WriteLine($"\nSample data:\n {JsonConvert.SerializeObject(sampleData, Formatting.Indented)}");
-                Console.WriteLine($"Single Prediction --> Actual value: {sampleData.Label} | Predicted value: {predictionResult.Prediction} | Predicted scores: [{String.Join(",", predictionResult.Score)}]");
-
-                Console.WriteLine("=============== Done with sample ===============");
-                Console.WriteLine("=============== End of process, hit any key to finish ===============");
+                LogToFile($"\nSample data:\n {JsonConvert.SerializeObject(sampleData, Formatting.Indented)}");
+                LogToFile($"Single Prediction --> Actual value: {sampleData.Label} | Predicted value: {predictionResult.Prediction} | Predicted scores: [{String.Join(",", predictionResult.Score)}]");
+                
+                LogToFile("=============== Done with sample ===============");
+                LogToFile("=============== End of process, hit any key to finish ===============");
+               
                 Console.ReadKey();
             }
         }
