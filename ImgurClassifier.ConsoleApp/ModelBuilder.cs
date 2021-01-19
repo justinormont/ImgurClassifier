@@ -170,9 +170,27 @@ namespace ImgurClassifier.ConsoleApp
                 //.Append(mlContext.Transforms.Concatenate("FeaturesForTreeFeat", new[] { "FeaturesNumeric", "FeaturesCategorical", "FeaturesText", }))
                 //.Append(mlContext.Transforms.CustomMapping(new ConvertLabelKeyToFloat().GetMapping(), "ConvertLabelKeyToFloat")) // Convert the Key type Label to a Float (so we can use a regression trainer on multiclass)
                 //.Append(mlContext.Transforms.FeaturizeByFastForestRegression(options: new FastForestRegressionFeaturizationEstimator.Options { InputColumnName = "FeaturesForTreeFeat", TreesColumnName = "FeaturesTreeFeatTrees", LeavesColumnName = "FeaturesTreeFeatLeaves", PathsColumnName = "FeaturesTreeFeatPaths", TrainerOptions = new FastForestRegressionTrainer.Options { LabelColumnName = "FloatLabel", FeatureColumnName = "FeaturesForTreeFeat", ExampleWeightColumnName = "Weight", ShuffleLabels = true, /* Shuffle the label ordering before each tree is learned. Needed when running a multi-class dataset as regression. */ } }))
-                
+                //.Append(mlContext.Transforms.Concatenate("FeaturesTreeFeat", new[] { "FeaturesTreeFeatLeaves" })) // Leaves column from the stacked tree featurizer model
 
-                .Append(mlContext.Transforms.Concatenate("FeaturesTreeFeat", new[] { "FeaturesTreeFeatLeaves" })) // Leaves column from the stacked tree featurizer model
+                // Model stacking using FastForestRegression on text/categorical/numeric features
+                .Append(mlContext.Transforms.Concatenate("FeaturesForStackedModel", new[] { "FeaturesNumeric", "FeaturesCategorical", "FeaturesText", }))
+                .Append(mlContext.Transforms.CustomMapping(new ConvertLabelKeyToFloat().GetMapping(), "ConvertLabelKeyToFloat")) // Convert the Key type Label to a Float (so we can use a regression trainer on multiclass)
+                .Append(mlContext.Regression.Trainers.FastForest(options: new FastForestRegressionTrainer.Options
+                {
+                    //FeatureFirstUsePenalty = 0.1,
+                    NumberOfLeaves = 20,
+                    FeatureFraction = 0.7,
+                    NumberOfTrees = 500,
+                    LabelColumnName = "FloatLabel",
+                    FeatureColumnName = "FeaturesForStackedModel",
+                    ExampleWeightColumnName = "Weight",
+                    //ExecutionTime = true,
+
+                    // Shuffle the label ordering before each tree is learned.
+                    // Needed when running a multi-class dataset as regression.
+                    ShuffleLabels = true, // todo: remove FastForestRegression stacked model; is only for testing why the FeaturizeByFastForestRegression is failing; won't be useful w/ `ShuffleLabels = true` set
+                }))
+                .Append(mlContext.Transforms.Concatenate("FeaturesStackedFastForest", new[] { "Score" })) // Score column from the stacked trainer
 
                 // Word Embeddings
                 .Append(mlContext.Transforms.Text.ApplyWordEmbedding("FeaturesWordEmbedding", "TokensForWordEmbedding", WordEmbeddingEstimator.PretrainedModelKind.FastTextWikipedia300D)) // todo: file bug that the word embedding transform doesn't add slot names. Perhaps just slot000...slot900? Or have it default to that in the concat for unnamed slot?
@@ -218,6 +236,7 @@ namespace ImgurClassifier.ConsoleApp
                     "FeaturesStackedAPOnText",
                     "FeaturesImage",
                     //"FeaturesTreeFeat",
+                    "FeaturesStackedFastForest",
                     "FeaturesWordEmbedding",
                     "FeaturesStackedLROnImages",
                     "FeaturesStackedFastTreeTweedieToPostScoreLog",
@@ -250,12 +269,6 @@ namespace ImgurClassifier.ConsoleApp
 
             return trainingPipeline;
         }
-
-
-        private static Action<RowWithKey, RowWithFloat> actionConvertKeyToFloat = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
-        {
-            rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
-        };
 
 
         public static ITransformer TrainModel(MLContext mlContext, IDataView trainDataView, IEstimator<ITransformer> trainingPipeline, Action<string> writeLogLine)
@@ -317,7 +330,7 @@ namespace ImgurClassifier.ConsoleApp
                         bestMetric = metric;
                         bestSetOfColumns = new HashSet<string>(columnsForIteration);
                     }
-                    
+                    // todo: print in binary form to help users understand the search pattern -- Convert.ToString(i, 2).PadLeft(columnCount, '0');
                     writeLogLine($"{i + " of " + total,11} {metrics?.MicroAccuracy ?? double.NaN,14:F4} {metrics?.MacroAccuracy ?? double.NaN,14:F4} {metrics?.LogLossReduction ?? double.NaN,17:F4} {sw2.ElapsedMilliseconds / 1000.0,9:F1} cols=[{string.Join(", ", columnsForIteration)}]");
                 }
                 catch (Exception e)
@@ -502,7 +515,7 @@ namespace ImgurClassifier.ConsoleApp
             ExperimentResult<MulticlassClassificationMetrics> experimentResult;
 
             //writeLogLine("\n=============== Training Stacked AutoML model on Text, Categorical, Numeric features ===============");
-            writeLogLine("\n=============== Training Stacked AutoML model on Text features ===============");
+            writeLogLine("\n=============== Training Stacked AutoML model on Text features ==============="); // todo: print the metric being optimized
 
             Func<MulticlassClassificationMetrics> GetBaselineMetrics = () =>
             {
@@ -520,8 +533,8 @@ namespace ImgurClassifier.ConsoleApp
             {
                 MaxExperimentTimeInSeconds = 3600,
                 //OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
-                //OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
-                OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
+                OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
+                //OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
             };
 
             // Set the column purposes for a subset of columns; the rest are auto-inferred
@@ -552,6 +565,9 @@ namespace ImgurClassifier.ConsoleApp
             columnsToIgnore.ForEach(a => columnInformation.IgnoredColumnNames.Add(a));
 
             MLContext mlContextTmp = new MLContext(); // todo: log bug that AutoML is canceling the main MLContext as time expires
+            mlContextTmp.Log += Program.ConsoleLogger;
+            mlContextTmp.Log += Program.FileLogger;
+
             experimentResult = mlContextTmp.Auto()
                 .CreateMulticlassClassificationExperiment(experimentSettings)
                 .Execute(
@@ -595,8 +611,8 @@ namespace ImgurClassifier.ConsoleApp
             {
                 MaxExperimentTimeInSeconds = 40 * 60,
                 //OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
-                //OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
-                OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
+                OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
+                //OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
             };
 
             // Set the column purposes for a subset of columns; the rest are auto-inferred
@@ -667,6 +683,9 @@ namespace ImgurClassifier.ConsoleApp
             validationDataView = mlContext.Data.Cache(validationDataView, new[] { "Label", "Weight", "FeaturesImage" }); // Cache checkpoint since the DnnFeaturizeImage is slow
 
             MLContext mlContextTmp = new MLContext(); // todo: log bug that AutoML is canceling the main MLContext as time expires
+            mlContextTmp.Log += Program.ConsoleLogger;
+            mlContextTmp.Log += Program.FileLogger;
+
             experimentResult = mlContextTmp.Auto()
                 .CreateMulticlassClassificationExperiment(experimentSettings)
                 .Execute(
@@ -730,10 +749,10 @@ namespace ImgurClassifier.ConsoleApp
                 TrainerOptions = trainerOptions
             };*/
 
-            //Action<RowWithKey, RowWithFloat> actionConvertKeyToFloat = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
-            //{
-            //    rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
-            //};
+            Action<RowWithKey, RowWithFloat> actionConvertKeyToFloat = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
+            {
+                rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
+            };
 
             var pipeline = trainingPipeline
                 // Convert the Key type to a Float (so we can use a regression trainer)
@@ -776,7 +795,7 @@ namespace ImgurClassifier.ConsoleApp
                 .Take(100)
                 .Select((tuple, featureImportanceIndex) => $"{featureImportanceIndex, -3} {tuple.featureImportance, -14}: {tuple.featureName}");
 
-            writeLogLine($"\nFeature importance: (top 100 of {weightsValues.Length:n0})");
+            writeLogLine($"\nFeature importance: (top {Math.Min(100, weightsValues.Length):n0} of {weightsValues.Length:n0})");
             writeLogLine(String.Join("\n", slotWeightText));
         }
 
@@ -919,7 +938,7 @@ namespace ImgurClassifier.ConsoleApp
             // Save/persist the trained model to a .ZIP file
             writeLogLine($"=============== Saving the model  ===============");
             mlContext.Model.Save(mlModel, modelInputSchema, GetAbsolutePath(modelRelativePath));
-            writeLogLine($"The model is saved to {GetAbsolutePath(modelRelativePath)}");
+            writeLogLine($"The model is saved to {GetAbsolutePath(modelRelativePath)}"); // todo: print the model file size, perhaps also the unzipped size
         }
 
         public static string GetAbsolutePath(string relativePath)

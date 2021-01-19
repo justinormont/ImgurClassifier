@@ -6,6 +6,7 @@ using ImgurClassifier.Model.DataModels;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using System.Text;
+using System.Diagnostics;
 
 namespace ImgurClassifier.ConsoleApp
 {
@@ -22,13 +23,15 @@ namespace ImgurClassifier.ConsoleApp
         private static void Main(string[] args)
         {
 
-            
+            // Lower the process priority to be nice to other processes
+            using (Process p = Process.GetCurrentProcess())
+                p.PriorityClass = ProcessPriorityClass.BelowNormal;
+
             using (logFs = File.AppendText(LOG_FILEPATH))
             {
                 LogToFile("\n\n=============== Starting imgur classifier sample  ===============");
 
                 MLContext mlContext = new MLContext();
-
                 mlContext.Log += ConsoleLogger;
                 mlContext.Log += FileLogger;
 
@@ -91,7 +94,7 @@ namespace ImgurClassifier.ConsoleApp
             return fullPath;
         }
 
-        private static void ConsoleLogger(object sender, LoggingEventArgs e)
+        internal static void ConsoleLogger(object sender, LoggingEventArgs e)
         {
             if ((e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Error || e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Warning) && !e.RawMessage.StartsWith("Encountered imag"))
             {
@@ -99,7 +102,7 @@ namespace ImgurClassifier.ConsoleApp
             }
         }
 
-        private static void FileLogger(object sender, LoggingEventArgs e)
+        internal static void FileLogger(object sender, LoggingEventArgs e)
         {
             if ((e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Error || e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Warning || e.Kind == Microsoft.ML.Runtime.ChannelMessageKind.Info || (e.Source == "AutoML" && !e.RawMessage.StartsWith("[Source="))) && !e.RawMessage.StartsWith("Encountered imag"))
             {
