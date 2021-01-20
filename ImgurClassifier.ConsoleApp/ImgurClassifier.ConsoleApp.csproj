@@ -18,6 +18,9 @@
     <PackageReference Include="Microsoft.ML.CpuMath" Version="1.5.4" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.6.0" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.MKLML" Version="1.6.0" />
+    <PackageReference Include="Microsoft.ML.TensorFlow" Version="1.5.4" />
+    <PackageReference Include="Microsoft.ML.Vision" Version="1.5.4" />
+    <PackageReference Include="SciSharp.TensorFlow.Redist" Version="2.3.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ImgurClassifier.Model\ImgurClassifier.Model.csproj" />

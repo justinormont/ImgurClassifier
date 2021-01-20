@@ -83,6 +83,7 @@ namespace ImgurClassifier.ConsoleApp
 
             ExperimentResult<MulticlassClassificationMetrics> experimentResult1 = null;
             ExperimentResult<MulticlassClassificationMetrics> experimentResult2 = null;
+            ExperimentResult<MulticlassClassificationMetrics> experimentResult3 = null;
 
             if (useAutoML)
             {
@@ -90,8 +91,9 @@ namespace ImgurClassifier.ConsoleApp
 
                 if (!useThreads)
                 {
-                    experimentResult1 = TrainAutoMLSubPipeline1(mlContext, trainDataView, validationDataView, writeLogLine);
                     experimentResult2 = TrainAutoMLSubPipeline2(mlContext, trainDataView, validationDataView, writeLogLine);
+                    experimentResult3 = TrainAutoMLSubPipeline3(mlContext, trainDataView, validationDataView, writeLogLine);
+                    experimentResult1 = TrainAutoMLSubPipeline1(mlContext, trainDataView, validationDataView, writeLogLine);
                 }
                 else
                 {
@@ -101,11 +103,16 @@ namespace ImgurClassifier.ConsoleApp
                     Thread workerThread2 = new(() => experimentResult2 = TrainAutoMLSubPipeline2(mlContext, trainDataView, validationDataView, writeLogLine));
                     workerThread2.Name = "AutoML Worker Thread - Images";
 
+                    Thread workerThread3 = new(() => experimentResult3 = TrainAutoMLSubPipeline3(mlContext, trainDataView, validationDataView, writeLogLine));
+                    workerThread3.Name = "AutoML Worker Thread - Images using TensorFlow";
+
                     workerThread1.Start();
                     workerThread2.Start();
+                    workerThread3.Start();
 
                     workerThread1.Join();
                     workerThread2.Join();
+                    workerThread3.Join();
                 }
             }
 
@@ -225,7 +232,12 @@ namespace ImgurClassifier.ConsoleApp
                     // Model stacking using the previously learned AutoML model #2 on Imge features (note: the AutoML estimator chain may mask existing columns)
                     .Append(experimentResult2.BestRun.Estimator)
                     .Append(mlContext.Transforms.Concatenate("FeaturesStackedAutoMLOnImages", new[] { "Score" })) // Score column from the stacked trainer
-                    .AppendCacheCheckpoint(env: mlContext); // Cache checkpoint since the DnnFeaturizeImage is slow
+                    //.AppendCacheCheckpoint(env: mlContext) // Cache checkpoint since the DnnFeaturizeImage is slow
+
+                    // Model stacking using the previously learned AutoML model #2 on Imge features (note: the AutoML estimator chain may mask existing columns)
+                    .Append(experimentResult3.BestRun.Estimator)
+                    .Append(mlContext.Transforms.Concatenate("FeaturesStackedAutoMLOnTensorFlowImages", new[] { "Score" })) // Score column from the stacked trainer
+                    .AppendCacheCheckpoint(env: mlContext); // Cache checkpoint since TF is slow
             }
 
 
@@ -247,7 +259,7 @@ namespace ImgurClassifier.ConsoleApp
                     "FeaturesKMeansClusterDistanceOnStringStats",
                 }
                 // Concatenate the AutoML features if enabled
-                .Concat(useAutoML ? new[] { "FeaturesStackedAutoMLOnText", "FeaturesStackedAutoMLOnImages" } : new string[] { }).ToArray();
+                .Concat(useAutoML ? new[] { "FeaturesStackedAutoMLOnText", "FeaturesStackedAutoMLOnImages", "FeaturesStackedAutoMLOnTensorFlowImages" } : new string[] { }).ToArray();
 
             var columnsToUse = AutoColumnSelector(mlContext, validationDataView, trainDataView, availableColumns, dataProcessPipeline, FeatureSelection.BackwardsSelection, writeLogLine);
             
@@ -531,7 +543,7 @@ namespace ImgurClassifier.ConsoleApp
 
             var experimentSettings = new MulticlassExperimentSettings
             {
-                MaxExperimentTimeInSeconds = 3600,
+                MaxExperimentTimeInSeconds = 7 * 60, //3600,
                 //OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
                 OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
                 //OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
@@ -609,7 +621,7 @@ namespace ImgurClassifier.ConsoleApp
 
             var experimentSettings = new MulticlassExperimentSettings
             {
-                MaxExperimentTimeInSeconds = 40 * 60,
+                MaxExperimentTimeInSeconds = 7 * 60, //40 * 60,
                 //OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
                 OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
                 //OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
@@ -707,6 +719,94 @@ namespace ImgurClassifier.ConsoleApp
         }
 
 
+        private static ExperimentResult<MulticlassClassificationMetrics> TrainAutoMLSubPipeline3(MLContext mlContext, IDataView trainDataView, IDataView validationDataView, Action<string> writeLogLine)
+        {
+            var sw = new Stopwatch();
+            sw.Start();
+
+            ExperimentResult<MulticlassClassificationMetrics> experimentResult;
+
+            writeLogLine("\n=============== Training Stacked AutoML model on Image features using TensorFlow ===============");
+
+            // Currently unused
+            Func<MulticlassClassificationMetrics> GetBaselineMetrics = () =>
+            {
+                var baselinePipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", "Label")
+                    .Append(mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.Prior(labelColumnName: "Label", exampleWeightColumnName: "Weight"), labelColumnName: "Label"));
+                var model = baselinePipeline.Fit(trainDataView);
+                var predictions = model.Transform(validationDataView);
+                var baselineMetrics = mlContext.MulticlassClassification.Evaluate(predictions, "Label", "Score");
+                return baselineMetrics;
+            };
+
+            var progressHandler = new MulticlassExperimentProgressHandler(GetBaselineMetrics, writeLogLine);
+
+            var experimentSettings = new MulticlassExperimentSettings
+            {
+                MaxExperimentTimeInSeconds = 0, // Finish after the 1st model
+                //OptimizingMetric = MulticlassClassificationMetric.LogLossReduction,
+                OptimizingMetric = MulticlassClassificationMetric.MicroAccuracy,
+                //OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
+            };
+
+            ColumnInferenceResults columnInference = mlContext.Auto().InferColumns(trainFileName, groupColumns: false);
+            ColumnInformation columnInformation = columnInference.ColumnInformation;
+
+            writeLogLine($"\nBefore ignoring columns:");
+            PrintColumnInformation(columnInformation, writeLogLine);
+
+            // Set all columns to be ignored (if we don't explicitly list the column purpose for each column, it will be re-inferred and used)
+            columnInformation.CategoricalColumnNames.ToList().ForEach(a => columnInformation.IgnoredColumnNames.Add(a));
+            columnInformation.CategoricalColumnNames.Clear();
+            columnInformation.NumericColumnNames.ToList().ForEach(a => columnInformation.IgnoredColumnNames.Add(a));
+            columnInformation.NumericColumnNames.Clear();
+            columnInformation.TextColumnNames.ToList().ForEach(a => columnInformation.IgnoredColumnNames.Add(a));
+            columnInformation.TextColumnNames.Clear();
+            columnInformation.ImagePathColumnNames.ToList().ForEach(a => columnInformation.IgnoredColumnNames.Add(a));
+            columnInformation.ImagePathColumnNames.Clear();
+
+            // Move Label, Weight, img1FileName out of ignored and to their correct purposes
+            columnInformation.IgnoredColumnNames.Remove("Label");
+            columnInformation.IgnoredColumnNames.Remove("Weight");
+            columnInformation.IgnoredColumnNames.Remove("img1FileName");
+            columnInformation.LabelColumnName = "Label";
+            columnInformation.ExampleWeightColumnName = "Weight";
+            columnInformation.ImagePathColumnNames.Add("img1FileName");
+
+            writeLogLine($"\nAfter ignoring columns:");
+            PrintColumnInformation(columnInformation, writeLogLine);
+
+            var basepathEscaped = basepath + Path.DirectorySeparatorChar;
+
+            if (Path.DirectorySeparatorChar == '\\')
+                basepathEscaped = basepathEscaped.Replace("\\", "\\\\"); // todo: verify the escaping works on Windows
+
+            // Add the basepath to the image filesnames
+            string expression = $"x : concat(\"{basepathEscaped}\", x)";
+            writeLogLine(expression);
+            var preFeaturizer = mlContext.Transforms.Expression("img1FileName", expression, new[] { "img1FileName" });
+            
+            experimentResult = mlContext.Auto()
+                .CreateMulticlassClassificationExperiment(experimentSettings)
+                .Execute(
+                    trainData: trainDataView,
+                    validationData: validationDataView,
+                    progressHandler: progressHandler,
+                    columnInformation: columnInformation,
+                    preFeaturizer: preFeaturizer
+                  );
+
+            writeLogLine("\nBest run:");
+            //progressHandler.Report(experimentResult.BestRun);
+            var iteration = experimentResult.RunDetails.ToList().IndexOf(experimentResult.BestRun) + 1;
+            ConsoleHelper.PrintIterationMetrics(iteration, experimentResult.BestRun.TrainerName, experimentResult.BestRun.ValidationMetrics, experimentResult.BestRun.RuntimeInSeconds, writeLogLine);
+            writeLogLine($"=============== Finished training AutoML model with TensorFlow ({sw.ElapsedMilliseconds / 1000.0} sec) ===============");
+
+            return experimentResult;
+        }
+
+
+
         private static void PrintProxyModelWeights(MLContext mlContext, IDataView trainingDataView, IEstimator<ITransformer> trainingPipeline, Action<string> writeLogLine)
         {
 
@@ -799,6 +899,23 @@ namespace ImgurClassifier.ConsoleApp
             writeLogLine(String.Join("\n", slotWeightText));
         }
 
+        private static void PrintColumnInformation(ColumnInformation columnInformation, Action<string> writeLogLine)
+        {
+            // Single valued
+            writeLogLine($"Label: {columnInformation.LabelColumnName}");
+            writeLogLine($"Weight: {columnInformation.ExampleWeightColumnName}");
+            writeLogLine($"SamplingKey: {columnInformation.SamplingKeyColumnName}");
+            writeLogLine($"GroupId: {columnInformation.GroupIdColumnName}");
+            writeLogLine($"ItemId: {columnInformation.ItemIdColumnName}");
+            writeLogLine($"UserId: {columnInformation.UserIdColumnName}");
+
+            // Multi-valued
+            writeLogLine($"Categorical: [{String.Join(", ", columnInformation.CategoricalColumnNames)}]");
+            writeLogLine($"Numeric: [{String.Join(", ", columnInformation.NumericColumnNames)}]");
+            writeLogLine($"Text: [{String.Join(", ", columnInformation.TextColumnNames)}]");
+            writeLogLine($"Image: [{String.Join(", ", columnInformation.ImagePathColumnNames)}]");
+            writeLogLine($"Ignored: [{String.Join(", ", columnInformation.IgnoredColumnNames)}]");
+        }
 
         #region ConvertLabelKeyToFloat CustomMapping
         [CustomMappingFactoryAttribute("ConvertLabelKeyToFloat")]
