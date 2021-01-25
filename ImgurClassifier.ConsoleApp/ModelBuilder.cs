@@ -11,6 +11,7 @@ using Microsoft.ML.Data;
 using Microsoft.ML.Trainers.FastTree;
 using Microsoft.ML.Transforms;
 using Microsoft.ML.Transforms.Text;
+using ImgurClassifier.Extras;
 
 namespace ImgurClassifier.ConsoleApp
 {
@@ -62,7 +63,7 @@ namespace ImgurClassifier.ConsoleApp
 
             // Build training pipeline
             //IEstimator<ITransformer> trainingPipeline = BuildTrainingPipeline(mlContext);
-            IEstimator<ITransformer> trainingPipeline = BuildTrainingPipelineUsing(mlContext, trainingDataView, validationDataView, useAutoML: true, writeLogLine);
+            IEstimator<ITransformer> trainingPipeline = BuildTrainingPipelineUsing(mlContext, trainingDataView, validationDataView, useAutoML: false, writeLogLine);
 
             // Train Model
             ITransformer mlModel = TrainModel(mlContext, trainingDataView, trainingPipeline, writeLogLine);
@@ -74,7 +75,7 @@ namespace ImgurClassifier.ConsoleApp
             SaveModel(mlContext, mlModel, modelFileName, trainingDataView.Schema, writeLogLine);
 
             // Print model weights of a proxy model
-            PrintProxyModelWeights(mlContext, trainingDataView, trainingPipeline, writeLogLine);
+            Utils.ProxyModelFeatureImportance(mlContext, Utils.Task.MulticlassClassification, "Label", "Features", "Weight", trainingDataView, trainingPipeline, writeLogLine);
         }
 
         
@@ -134,6 +135,12 @@ namespace ImgurClassifier.ConsoleApp
                  // Text features (bigrams + trichargrams)
                  .Append(mlContext.Transforms.Text.FeaturizeText("FeaturesText", new TextFeaturizingEstimator.Options() { OutputTokensColumnName = "TokensForWordEmbedding" }, new[] { "title", "img1Desc", "img2Desc", "img3Desc" })) // TokensForWordEmbedding is later used by the word embedding transform
 
+                 // Text features (bigrams + trichargrams) on just the tags
+                 .Append(mlContext.Transforms.Text.FeaturizeText("FeaturesTextOnTags", new TextFeaturizingEstimator.Options() { }, new[] { "tags" }))
+
+                // Count Target Encoder (should run on tag names instead)
+                //.Append(mlContext.Transforms.CountTargetEncode("FeaturesCountTargetEncoder", "img1Type")) // todo: Log bug as CountTargetEncode seems to be only partially exposed in the estimator API
+
                 // Model stacking using an Averaged Perceptron on the text features
                 .AppendCacheCheckpoint(env: mlContext) // Cache checkpoint since the OVA Averaged Perceptron makes many passes of its data
                 .Append(mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "FeaturesText", numberOfIterations: 10), labelColumnName: "Label")) // todo: file bug that AveragedPerceptron does not expose exampleWeightColumnName
@@ -145,16 +152,16 @@ namespace ImgurClassifier.ConsoleApp
 
                 // String statistics (length, vowelCount, numberCount, ...) on title, img1Desc, img2Desc, img3Desc
                 .Append(mlContext.Transforms.CopyColumns("text", "title"))
-                .Append(mlContext.Transforms.CustomMapping(new StringStatisticsAction().GetMapping(), "StringStatistics"))
+                .Append(mlContext.Transforms.CustomMapping(new StringStatisticsFeaturizer.StringStatisticsAction().GetMapping(), "StringStatistics"))
                 .Append(mlContext.Transforms.Concatenate("StringStatsOnTitle", new[] { "length", "vowelCount", "consonantCount", "numberCount", "underscoreCount", "letterCount", "wordCount", "wordLengthAverage", "lineCount", "startsWithVowel", "endsInVowel", "endsInVowelNumber", "lowerCaseCount", "upperCaseCount", "upperCasePercent", "letterPercent", "numberPercent", "longestRepeatingChar", "longestRepeatingVowel" }))
                 .Append(mlContext.Transforms.CopyColumns("text", "img1Desc"))
-                .Append(mlContext.Transforms.CustomMapping(new StringStatisticsAction().GetMapping(), "StringStatistics"))
+                .Append(mlContext.Transforms.CustomMapping(new StringStatisticsFeaturizer.StringStatisticsAction().GetMapping(), "StringStatistics"))
                 .Append(mlContext.Transforms.Concatenate("StringStatsOnImg1Desc", new[] { "length", "vowelCount", "consonantCount", "numberCount", "underscoreCount", "letterCount", "wordCount", "wordLengthAverage", "lineCount", "startsWithVowel", "endsInVowel", "endsInVowelNumber", "lowerCaseCount", "upperCaseCount", "upperCasePercent", "letterPercent", "numberPercent", "longestRepeatingChar", "longestRepeatingVowel" }))
                 .Append(mlContext.Transforms.CopyColumns("text", "img2Desc"))
-                .Append(mlContext.Transforms.CustomMapping(new StringStatisticsAction().GetMapping(), "StringStatistics"))
+                .Append(mlContext.Transforms.CustomMapping(new StringStatisticsFeaturizer.StringStatisticsAction().GetMapping(), "StringStatistics"))
                 .Append(mlContext.Transforms.Concatenate("StringStatsOnImg2Desc", new[] { "length", "vowelCount", "consonantCount", "numberCount", "underscoreCount", "letterCount", "wordCount", "wordLengthAverage", "lineCount", "startsWithVowel", "endsInVowel", "endsInVowelNumber", "lowerCaseCount", "upperCaseCount", "upperCasePercent", "letterPercent", "numberPercent", "longestRepeatingChar", "longestRepeatingVowel" }))
                 .Append(mlContext.Transforms.CopyColumns("text", "img3Desc"))
-                .Append(mlContext.Transforms.CustomMapping(new StringStatisticsAction().GetMapping(), "StringStatistics"))
+                .Append(mlContext.Transforms.CustomMapping(new StringStatisticsFeaturizer.StringStatisticsAction().GetMapping(), "StringStatistics"))
                 .Append(mlContext.Transforms.Concatenate("StringStatsOnImg3Desc", new[] { "length", "vowelCount", "consonantCount", "numberCount", "underscoreCount", "letterCount", "wordCount", "wordLengthAverage", "lineCount", "startsWithVowel", "endsInVowel", "endsInVowelNumber", "lowerCaseCount", "upperCaseCount", "upperCasePercent", "letterPercent", "numberPercent", "longestRepeatingChar", "longestRepeatingVowel" }))
                 .Append(mlContext.Transforms.Concatenate("FeaturesStringStatistics", new[] { "StringStatsOnTitle", "StringStatsOnImg1Desc", "StringStatsOnImg2Desc", "StringStatsOnImg3Desc" }))
 
@@ -181,7 +188,7 @@ namespace ImgurClassifier.ConsoleApp
 
                 // Model stacking using FastForestRegression on text/categorical/numeric features
                 .Append(mlContext.Transforms.Concatenate("FeaturesForStackedModel", new[] { "FeaturesNumeric", "FeaturesCategorical", "FeaturesText", }))
-                .Append(mlContext.Transforms.CustomMapping(new ConvertLabelKeyToFloat().GetMapping(), "ConvertLabelKeyToFloat")) // Convert the Key type Label to a Float (so we can use a regression trainer on multiclass)
+                .Append(mlContext.Transforms.CustomMapping(new Utils.ConvertLabelKeyToFloat().GetMapping(), "ConvertLabelKeyToFloat")) // Convert the Key type Label to a Float (so we can use a regression trainer on multiclass)
                 .Append(mlContext.Regression.Trainers.FastForest(options: new FastForestRegressionTrainer.Options
                 {
                     //FeatureFirstUsePenalty = 0.1,
@@ -240,14 +247,15 @@ namespace ImgurClassifier.ConsoleApp
                     .AppendCacheCheckpoint(env: mlContext); // Cache checkpoint since TF is slow
             }
 
-
             string[] availableColumns = new[] {
                     "FeaturesNumeric",
                     "FeaturesCategorical",
                     "FeaturesText",
+                    "FeaturesTextOnTags",
                     "FeaturesStackedAPOnText",
                     "FeaturesImage",
                     //"FeaturesTreeFeat",
+                    //"FeaturesCountTargetEncoder",
                     "FeaturesStackedFastForest",
                     "FeaturesWordEmbedding",
                     "FeaturesStackedLROnImages",
@@ -261,21 +269,51 @@ namespace ImgurClassifier.ConsoleApp
                 // Concatenate the AutoML features if enabled
                 .Concat(useAutoML ? new[] { "FeaturesStackedAutoMLOnText", "FeaturesStackedAutoMLOnImages", "FeaturesStackedAutoMLOnTensorFlowImages" } : new string[] { }).ToArray();
 
-            var columnsToUse = AutoColumnSelector(mlContext, validationDataView, trainDataView, availableColumns, dataProcessPipeline, FeatureSelection.BackwardsSelection, writeLogLine);
-            
+            // Run auto-column feature selection to choose the best columns
+            var columnsToUse = Utils.AutoColumnSelector(mlContext, validationDataView, trainDataView, availableColumns, dataProcessPipeline, Utils.FeatureSelection.BackwardsSelection, writeLogLine);
+
             dataProcessPipeline = dataProcessPipeline
                 .Append(mlContext.Transforms.Concatenate("Features", columnsToUse.ToArray()))
                 .AppendCacheCheckpoint(mlContext);
 
+            // Set the training algorithm -- note: ideally, the final trainer would be fit on a fully independent dataset split from the submodels; I don't think this is simple when using the estimators API.
 
-            // Set the training algorithm 
-            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label");
-            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight", minimumExampleCountPerLeaf: 2), labelColumnName: "Label");
+            // MicroAcc, MacroAcc, LogLossReduction
+            // -----------------------------------
+            // 0.9174, 0.5000, -0.609
+            // var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label"); // todo: file bug that AveragedPerceptron does not expose a weight column
+
+            // 0.8747, 0.5023, -7.692
+            // var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight", minimumExampleCountPerLeaf: 2), labelColumnName: "Label");
+
+            // 0.9034, 0.4975, -0.563
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LinearSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
-            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LdSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
+
+            // 0.8431, 0.5975, -0.991
+            var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.LdSvm(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
+
+            // 0.8700, 0.5151, -1.773
             //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.FastForest(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
+
+            // 0.6815, 0.6526, -3.095
             //var trainer = mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(enforceNonNegativity: true, exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
-            var trainer = mlContext.MulticlassClassification.Trainers.LightGbm(exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
+
+            // 0.8607, 0.5151, -2.322
+            //var trainer = mlContext.MulticlassClassification.Trainers.LightGbm(exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
+
+            // 0.7948, 0.5814, -26.300
+            //var trainer = mlContext.MulticlassClassification.Trainers.SdcaNonCalibrated(exampleWeightColumnName: "Weight", featureColumnName: "Features", labelColumnName: "Label");
+
+            // 0.7846, 0.6526, -20.067
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.SymbolicSgdLogisticRegression(labelColumnName: "Label", featureColumnName: "Features"), labelColumnName: "Label"); // todo: file bug that SymbolicSgdLogisticRegression does not expose a weight column
+
+            // 0.3881, 0.6409, -72.571
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.SgdCalibrated(labelColumnName: "Label", featureColumnName: "Features", exampleWeightColumnName: "Weight"), labelColumnName: "Label");
+
+            // 0.6379, 0.7004, -28.035 (no weight)
+            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.SgdCalibrated(labelColumnName: "Label", featureColumnName: "Features"), labelColumnName: "Label");
+
+
 
             var trainingPipeline = dataProcessPipeline.Append(trainer).Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
 
@@ -296,207 +334,6 @@ namespace ImgurClassifier.ConsoleApp
             return model;
         }
 
-
-        // Feature selection on the column level to choose the best combination of columns
-        private static IEnumerable<string> AutoColumnSelector(MLContext mlContext, IDataView validationDataView, IDataView trainingDataView, IEnumerable<string> columnNames, IEstimator<ITransformer> trainingPipeline, FeatureSelection searchPattern, Action<string> writeLogLine)
-        {
-            var sw = new Stopwatch();
-            sw.Start();
-
-            writeLogLine("=============== Sweeping featurization columns ===============");
-
-            var columnList = columnNames.ToArray();
-            var columnsToPrefetch = columnNames.Union(new[] { "Label", "Weight" }).ToArray();
-            
-            var fitPipeline = trainingPipeline.Fit(trainingDataView);
-            var transformedTrainingDataView = mlContext.Data.Cache(fitPipeline.Transform(trainingDataView), columnsToPrefetch: columnsToPrefetch);
-            var transformedValidationDataView = mlContext.Data.Cache(fitPipeline.Transform(validationDataView), columnsToPrefetch: columnsToPrefetch);
-
-            //var trainer = mlContext.MulticlassClassification.Trainers.OneVersusAll(mlContext.BinaryClassification.Trainers.AveragedPerceptron(labelColumnName: "Label", featureColumnName: "Features", numberOfIterations: 10), labelColumnName: "Label");
-            var trainer = mlContext.MulticlassClassification.Trainers.LightGbm(labelColumnName: "Label", featureColumnName: "Features");
-            HashSet<string> bestSetOfColumns = new();
-            double bestMetric = double.NaN;
-
-            writeLogLine($"{"",11} {"MicroAccuracy",14} {"MacroAccuracy",14} {"LogLossReduction",17} {"Duration",9} TrainingColumns");
-
-            // Define action to use within the switch statement below
-            Func<string[], int, string, (double, double)> actionTrainOnColumnsAndUpdateBest = (string[] columnsForIteration, int i, string total) =>
-            {
-                var sw2 = new Stopwatch();
-                sw2.Start();
-                double gain = double.NaN;
-                double metric = double.NaN;
-                try
-                {
-                    var pipelineForIteration = mlContext.Transforms.Concatenate("Features", columnsForIteration).Append(trainer);
-                    var model = pipelineForIteration.Fit(transformedTrainingDataView);
-                    var predictions = model.Transform(transformedValidationDataView);
-                    var metrics = mlContext.MulticlassClassification.Evaluate(predictions, "Label", "Score");
-                    //metric = Math.Sqrt(metrics.MicroAccuracy * metrics.MacroAccuracy); // Geometric mean
-                    metric = metrics.MicroAccuracy * 0.8 + metrics.MacroAccuracy * 0.2; // Weighted arithmetic mean
-                    gain = metric - (!double.IsNaN(bestMetric) ? bestMetric : double.NegativeInfinity); // Assumes higher is better
-
-                    if (metric > bestMetric || double.IsNaN(bestMetric))
-                    {
-                        writeLogLine($"New leader: {metric:F4}");
-                        bestMetric = metric;
-                        bestSetOfColumns = new HashSet<string>(columnsForIteration);
-                    }
-                    // todo: print in binary form to help users understand the search pattern -- Convert.ToString(i, 2).PadLeft(columnCount, '0');
-                    writeLogLine($"{i + " of " + total,11} {metrics?.MicroAccuracy ?? double.NaN,14:F4} {metrics?.MacroAccuracy ?? double.NaN,14:F4} {metrics?.LogLossReduction ?? double.NaN,17:F4} {sw2.ElapsedMilliseconds / 1000.0,9:F1} cols=[{string.Join(", ", columnsForIteration)}]");
-                }
-                catch (Exception e)
-                {
-                    writeLogLine($"Iteration {i} failed. cols=[{string.Join(", ", columnsForIteration)}] duration={sw2.ElapsedMilliseconds / 1000.0,9:F1} error={e}");
-                }
-                return (gain, metric);
-            };
-
-            
-            switch (searchPattern)
-            {
-                case FeatureSelection.ExhaustiveSearch: // O(2^N); boolean combinatorics of each column on/off
-                    {
-                        var count = Math.Pow(2, columnList.Length);
-                        for (var i = 1; i < count; i++) // i=0 would be no columns, so start at 1
-                        {
-                            var columnsForIteration = columnList.Where((_, j) => ((i >> j) & 1) == 1).ToArray(); // Bit twiddling; shift and mask to read bits
-                            actionTrainOnColumnsAndUpdateBest(columnsForIteration, i, count.ToString());
-                        }
-                        break;
-                    }
-
-                case FeatureSelection.RandomSearch: // O(C); try random subsets of the columns w/ early stopping
-                    {
-                        var earlyStoppingRounds = 50;
-                        var count = earlyStoppingRounds;
-                        var rand = new Random();
-                        var max = (int)Math.Pow(2, columnList.Length);
-                        var tried = new HashSet<int>();
-                        actionTrainOnColumnsAndUpdateBest(columnList, 0, count.ToString() + "+"); // Baseline with all columns
-
-                        for (var k = 1; k <= count; k++) // Iteration 0 is used for the baseline run, so start at 1
-                        {
-                            int i, randAttempts = 0;
-
-                            do
-                            {
-                                i = rand.Next(1, max); // i=0 would be no columns, so start at 1
-                                randAttempts++;
-                            }
-                            while (tried.Contains(i) && randAttempts < 10);
-
-                            if (randAttempts == 10)
-                                break; // Cound not find an new set of columns to try
-
-                            var columnsForIteration = columnList.Where((_, j) => ((i >> j) & 1) == 1).ToArray(); // Bit twiddling; shift and mask to read bits
-                            var (gain, _) = actionTrainOnColumnsAndUpdateBest(columnsForIteration, k, count.ToString() + "+");
-                            if (gain > 0)
-                                count = k + 50; // Extend limit for early stopping
-                        }
-                        break;
-                    }
-
-                case FeatureSelection.OnePassRemoval: // O(N); tries removing each column; remove if no improvement to metrics
-                {
-                        var removedColumns = new HashSet<string>();
-                        actionTrainOnColumnsAndUpdateBest(columnList, 0, columnList.Length.ToString()); // Baseline to set bestMetric
-
-                        for (var i = 0; i < columnList.Length; i++) 
-                        {
-                            var columnsForIteration = columnList.Where((col, j) => (j != i && !removedColumns.Contains(col))).ToArray();
-                            var (gain, metric) = actionTrainOnColumnsAndUpdateBest(columnsForIteration, i + 1, (columnList.Length + 1).ToString());
-                            if (gain > 0) // If better without the column, remove it
-                                removedColumns.Add(columnList[i]);
-                        }
-                        break;
-                    }
-
-                case FeatureSelection.ForwardSelection: // O(N^2); iteratively add the next best column after each pass
-                    {
-                        double bestMetricOverall = double.NegativeInfinity;
-                        HashSet<string> currentSetOfColumns = new();
-                        string bestNextColumn;
-                        int count = 0;
-                        actionTrainOnColumnsAndUpdateBest(columnList, 0, columnList.Length.ToString()); // Baseline with all columns
-
-                        do
-                        {
-                            bestNextColumn = null;
-                            int countBeforePass = count;
-                            for (var i = 0; i < columnList.Length; i++)
-                            {
-                                if (currentSetOfColumns.Contains(columnList[i]))
-                                    continue; // No need to try this column, it's already selected
-                                var columnsForIteration = columnList.Where((col, j) => (j == i || currentSetOfColumns.Contains(col))).ToArray();
-                                var (gain, metric) = actionTrainOnColumnsAndUpdateBest(columnsForIteration, count++, $"<={Math.Pow(columnList.Length - currentSetOfColumns.Count(), 2) / 2 + countBeforePass}");
-                                if (metric > bestMetricOverall)
-                                {
-                                    bestMetricOverall = metric;
-                                    bestNextColumn = columnList[i];
-                                }
-                            }
-
-                            if (bestNextColumn != null)
-                                currentSetOfColumns.Add(bestNextColumn);
-                        }
-                        while (bestNextColumn != null);
-                        break;
-                    }
-
-                case FeatureSelection.BackwardsSelection: // O(N^2); iteratively remove the next worst column after each pass
-                    {
-                        double bestMetricOverall = double.NegativeInfinity;
-                        HashSet<string> currentSetOfColumns = new(columnList);
-                        string worstNextColumn;
-                        int count = 0;
-                        actionTrainOnColumnsAndUpdateBest(columnList, count++, $"<={Math.Pow(columnList.Length, 2) / 2}"); // Baseline to set bestMetric
-
-                        do
-                        {
-                            worstNextColumn = null;
-                            int countBeforePass = count;
-                            for (var i = 0; i < columnList.Length; i++)
-                            {
-                                if (!currentSetOfColumns.Contains(columnList[i]))
-                                    continue; // No need to try this column, it's already selected
-                                var columnsForIteration = columnList.Where((col, j) => (j != i && currentSetOfColumns.Contains(col))).ToArray();
-                                var (gain, metric) = actionTrainOnColumnsAndUpdateBest(columnsForIteration, count++, $"<={Math.Pow(columnList.Length, 2) / 2}");
-                                if (metric >= bestMetricOverall)
-                                {
-                                    bestMetricOverall = metric;
-                                    worstNextColumn = columnList[i];
-                                }
-                            }
-
-                            if (worstNextColumn != null)
-                                currentSetOfColumns.Remove(worstNextColumn);
-                        }
-                        while (worstNextColumn != null);
-                        break;
-                    }
-                default:
-                    throw new Exception($"Unknown search scheme: {searchPattern}");
-            }
-
-            var selectedColumns = columnList.Where(col => bestSetOfColumns.Contains(col));
-            var nonSelectedColumns = columnList.Where(col => !bestSetOfColumns.Contains(col));
-
-            writeLogLine($"Removed columns: [{string.Join(", ", nonSelectedColumns)}]");
-            writeLogLine($"Best set of columns: [{string.Join(", ", selectedColumns)}]");
-            writeLogLine($"=============== End of sweeping featurization columns ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
-
-            return selectedColumns;
-        }
-
-        private enum FeatureSelection
-        {
-            ExhaustiveSearch = 1,
-            OnePassRemoval = 2,
-            ForwardSelection = 3,
-            BackwardsSelection = 4,
-            RandomSearch = 5,
-        } 
 
         private static void EvaluateModel(MLContext mlContext, ITransformer mlModel, IDataView testDataView, Action<string> writeLogLine)
         {
@@ -749,7 +586,12 @@ namespace ImgurClassifier.ConsoleApp
                 //OptimizingMetric = MulticlassClassificationMetric.MacroAccuracy,
             };
 
-            ColumnInferenceResults columnInference = mlContext.Auto().InferColumns(trainFileName, groupColumns: false);
+            MLContext mlContextTmp = new MLContext(); // todo: log bug that AutoML is canceling the main MLContext as time expires
+            mlContextTmp.Log += Program.ConsoleLogger;
+            mlContextTmp.Log += Program.FileLogger;
+
+
+            ColumnInferenceResults columnInference = mlContextTmp.Auto().InferColumns(trainFileName, groupColumns: false);
             ColumnInformation columnInformation = columnInference.ColumnInformation;
 
             writeLogLine($"\nBefore ignoring columns:");
@@ -781,12 +623,14 @@ namespace ImgurClassifier.ConsoleApp
             if (Path.DirectorySeparatorChar == '\\')
                 basepathEscaped = basepathEscaped.Replace("\\", "\\\\"); // todo: verify the escaping works on Windows
 
+            
+            
             // Add the basepath to the image filesnames
             string expression = $"x : concat(\"{basepathEscaped}\", x)";
             writeLogLine(expression);
-            var preFeaturizer = mlContext.Transforms.Expression("img1FileName", expression, new[] { "img1FileName" });
-            
-            experimentResult = mlContext.Auto()
+            var preFeaturizer = mlContextTmp.Transforms.Expression("img1FileName", expression, new[] { "img1FileName" });
+
+            experimentResult = mlContextTmp.Auto()
                 .CreateMulticlassClassificationExperiment(experimentSettings)
                 .Execute(
                     trainData: trainDataView,
@@ -803,100 +647,6 @@ namespace ImgurClassifier.ConsoleApp
             writeLogLine($"=============== Finished training AutoML model with TensorFlow ({sw.ElapsedMilliseconds / 1000.0} sec) ===============");
 
             return experimentResult;
-        }
-
-
-
-        private static void PrintProxyModelWeights(MLContext mlContext, IDataView trainingDataView, IEstimator<ITransformer> trainingPipeline, Action<string> writeLogLine)
-        {
-
-            /*
-            // Train a proxy model
-            var pipeline = trainingPipeline.Append(mlContext.Regression.Trainers.FastForest(
-                options: new FastForestRegressionTrainer.Options()
-                {
-                    FeatureColumnName = "Features",
-                    LabelColumnName = "Score",
-                    ExampleWeightColumnName = "Weight",
-                    ShuffleLabels = true,
-                }));
-
-            */
-
-            var trainerOptions = new FastForestRegressionTrainer.Options
-            {
-                //FeatureFirstUsePenalty = 0.1,
-                NumberOfLeaves = 20,
-                FeatureFraction = 0.7,
-                NumberOfTrees = 500,
-                LabelColumnName = "FloatLabel",
-                FeatureColumnName = "Features",
-                ExampleWeightColumnName = "Weight",
-                //ExecutionTime = true,
-                
-                // Shuffle the label ordering before each tree is learned.
-                // Needed when running a multi-class dataset as regression.
-                ShuffleLabels = true,
-            };
-
-            // Define the tree-based featurizer's configuration.
-            /*var options = new FastForestRegressionFeaturizationEstimator.Options
-            {
-                InputColumnName = "Features",
-                TreesColumnName = "FeaturesTreeFeatTrees",
-                LeavesColumnName = "FeaturesTreeFeatLeaves",
-                PathsColumnName = "FeaturesTreeFeatPaths",
-                TrainerOptions = trainerOptions
-            };*/
-
-            Action<RowWithKey, RowWithFloat> actionConvertKeyToFloat = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
-            {
-                rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
-            };
-
-            var pipeline = trainingPipeline
-                // Convert the Key type to a Float (so we can use a regression trainer)
-                .Append(mlContext.Transforms.CustomMapping(actionConvertKeyToFloat, "Label"))
-
-                // Train a FastForestRegression model
-                //.Append(mlContext.Transforms.FeaturizeByFastForestRegression(options));
-                .Append(mlContext.Regression.Trainers.FastForest(trainerOptions));
-
-            var sw = new Stopwatch();
-            sw.Start();
-            writeLogLine("=============== Training proxy model ===============");
-
-            // Fit this pipeline to the training data.
-            var model = pipeline.Fit(trainingDataView);
-
-            writeLogLine($"=============== End of proxy training process ({sw.ElapsedMilliseconds / 1000.0} sec) ===============\n");
-
-            // Get the feature importance based on the information gain used during training.
-            VBuffer<float> weights = default;
-            model.LastTransformer.Model.GetFeatureWeights(ref weights);
-            float[] weightsValues = weights.DenseValues().ToArray();
-
-            // Get the name of the features (slot names)
-            var output = model.Transform(trainingDataView);
-            VBuffer<ReadOnlyMemory<char>> slotNames = default;
-            output.Schema["Features"].GetSlotNames(ref slotNames);
-
-            // Sort to place the most important features first
-            IEnumerable<string> slotWeightText = slotNames.Items()
-                .Select((kvp, slotIndex) =>
-                    (
-                        featureName: $"{(kvp.Value.Length > 0 ? kvp.Value : $"UnnamedSlot_{slotIndex:000000}")}",
-                        featureImportance: weightsValues[slotIndex],
-                        featureImportanceAbs: (float)Math.Abs(weightsValues[slotIndex])
-                    )
-                )
-                .Where(tuple => tuple.featureImportanceAbs > 0)
-                .OrderByDescending(tuple => tuple.featureImportanceAbs)
-                .Take(100)
-                .Select((tuple, featureImportanceIndex) => $"{featureImportanceIndex, -3} {tuple.featureImportance, -14}: {tuple.featureName}");
-
-            writeLogLine($"\nFeature importance: (top {Math.Min(100, weightsValues.Length):n0} of {weightsValues.Length:n0})");
-            writeLogLine(String.Join("\n", slotWeightText));
         }
 
         private static void PrintColumnInformation(ColumnInformation columnInformation, Action<string> writeLogLine)
@@ -917,138 +667,7 @@ namespace ImgurClassifier.ConsoleApp
             writeLogLine($"Ignored: [{String.Join(", ", columnInformation.IgnoredColumnNames)}]");
         }
 
-        #region ConvertLabelKeyToFloat CustomMapping
-        [CustomMappingFactoryAttribute("ConvertLabelKeyToFloat")]
-        private class ConvertLabelKeyToFloat : CustomMappingFactory<RowWithKey, RowWithFloat>
-        {
-            private static Action<RowWithKey, RowWithFloat> CustomAction = (RowWithKey rowWithKey, RowWithFloat rowWithFloat) =>
-            {
-                rowWithFloat.FloatLabel = rowWithKey.Label == 0 ? float.NaN : rowWithKey.Label - 1;
-            };
 
-            public override Action<RowWithKey, RowWithFloat> GetMapping() => CustomAction;
-        }
-
-        private class RowWithKey
-        {
-            [KeyType(99999)]
-            public uint Label { get; set; }
-        }
-
-        private class RowWithFloat
-        {
-            public float FloatLabel { get; set; }
-        }
-        #endregion
-
-
-        #region StringStatistics CustomMapping
-        [CustomMappingFactoryAttribute("StringStatistics")]
-        private class StringStatisticsAction : CustomMappingFactory<RowWithText, RowWithStringStatistics>
-        {
-            
-            public static Action<RowWithText, RowWithStringStatistics> CustomAction = (RowWithText input, RowWithStringStatistics output) =>
-            {
-                string str = (input.Text is string ? (string)(object)input.Text : string.Join(" ", input.Text));
-                char[] text = str.ToCharArray();
-
-                // Note: These are written for clarity; for speed, a single pass of the character array could be done.
-                output.Length = text.Length;
-                output.VowelCount = text.Count(isVowel);
-                output.ConsonantCount = text.Count(isConsonant);
-                output.NumberCount = text.Count(Char.IsDigit);
-                output.UnderscoreCount = text.Count(c => c == '_');
-                output.LetterCount = text.Count(Char.IsLetter);
-                output.WordCount = text.Count(Char.IsSeparator) + 1;
-                output.WordLengthAverage = (output.Length - output.WordCount + 1) / output.WordCount;
-                output.LineCount = text.Count(c => c == '\n') + 1;
-                output.StartsWithVowel = (isVowel(text.FirstOrDefault()) ? 1 : 0);
-                output.EndsInVowel = (isVowel(text.LastOrDefault()) ? 1 : 0);
-                output.EndsInVowelNumber = (isVowelOrDigit(text.LastOrDefault()) ? 1 : 0);
-                output.LowerCaseCount = text.Count(Char.IsLower);
-                output.UpperCaseCount = text.Count(Char.IsUpper);
-                output.UpperCasePercent = (output.LetterCount == 0 ? 0 : ((float)output.UpperCaseCount) / output.LetterCount);
-                output.LetterPercent = (output.Length == 0 ? 0 : ((float)output.LetterCount) / output.Length);
-                output.NumberPercent = (output.Length == 0 ? 0 : ((float)output.NumberCount) / output.Length);
-                output.LongestRepeatingChar = maxRepeatingCharCount(text);
-                output.LongestRepeatingVowel = maxRepeatingVowelCount(text);
-            };
-
-            private static readonly Func<char, bool> isVowel = ((x) => x == 'e' || x == 'a' || x == 'o' || x == 'i' || x == 'u' || x == 'E' || x == 'A' || x == 'O' || x == 'I' || x == 'U');
-            private static readonly Func<char, bool> isConsonant = ((x) => (x >= 'A' && x <= 'Z') || (x >= 'a' && x <= 'z') && !(x == 'e' || x == 'a' || x == 'o' || x == 'i' || x == 'u' || x == 'E' || x == 'A' || x == 'O' || x == 'I' || x == 'U'));
-            private static readonly Func<char, bool> isVowelOrDigit = ((x) => x == 'e' || x == 'a' || x == 'o' || x == 'i' || x == 'u' || x == 'E' || x == 'A' || x == 'O' || x == 'I' || x == 'U' || (x >= '0' && x <= '9'));
-            private static readonly Func<char[], int> maxRepeatingCharCount = ((s) => { int max = 0, j = 0; for (var i = 0; i < s.Length; ++i) { if (s[i] == s[j]) { if (max < i - j + 1) max = i - j + 1; } else j = i; } return max; });
-            private static readonly Func<char[], int> maxRepeatingVowelCount = ((s) => { int max = 0, j = 0; for (var i = 0; i < s.Length; ++i) { if (s[i] == s[j] && isVowel(s[j])) { if (max < i - j + 1) max = i - j + 1; } else j = i; } return max; });
-
-            public override Action<RowWithText, RowWithStringStatistics> GetMapping() => CustomAction;
-        }
-
-        private class RowWithText
-        {
-            [ColumnName("text")]
-            public string Text { get; set; }
-        }
-
-        private class RowWithStringStatistics
-        {
-            [ColumnName("length")]
-            public float Length { get; set; }
-
-            [ColumnName("vowelCount")]
-            public float VowelCount { get; set; }
-
-            [ColumnName("consonantCount")]
-            public float ConsonantCount { get; set; }
-
-            [ColumnName("numberCount")]
-            public float NumberCount { get; set; }
-
-            [ColumnName("underscoreCount")]
-            public float UnderscoreCount { get; set; }
-
-            [ColumnName("letterCount")]
-            public float LetterCount { get; set; }
-
-            [ColumnName("wordCount")]
-            public float WordCount { get; set; }
-
-            [ColumnName("wordLengthAverage")]
-            public float WordLengthAverage { get; set; }
-
-            [ColumnName("lineCount")]
-            public float LineCount { get; set; }
-
-            [ColumnName("startsWithVowel")]
-            public float StartsWithVowel { get; set; }
-
-            [ColumnName("endsInVowel")]
-            public float EndsInVowel { get; set; }
-
-            [ColumnName("endsInVowelNumber")]
-            public float EndsInVowelNumber { get; set; }
-
-            [ColumnName("lowerCaseCount")]
-            public float LowerCaseCount { get; set; }
-
-            [ColumnName("upperCaseCount")]
-            public float UpperCaseCount { get; set; }
-
-            [ColumnName("upperCasePercent")]
-            public float UpperCasePercent { get; set; }
-
-            [ColumnName("letterPercent")]
-            public float LetterPercent { get; set; }
-
-            [ColumnName("numberPercent")]
-            public float NumberPercent { get; set; }
-
-            [ColumnName("longestRepeatingChar")]
-            public float LongestRepeatingChar { get; set; }
-
-            [ColumnName("longestRepeatingVowel")]
-            public float LongestRepeatingVowel { get; set; }
-        }
-        #endregion
 
         private static void SaveModel(MLContext mlContext, ITransformer mlModel, string modelRelativePath, DataViewSchema modelInputSchema, Action<string> writeLogLine)
         {

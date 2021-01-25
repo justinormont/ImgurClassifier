@@ -21,6 +21,8 @@
     <PackageReference Include="Microsoft.ML.TensorFlow" Version="1.5.4" />
     <PackageReference Include="Microsoft.ML.Vision" Version="1.5.4" />
     <PackageReference Include="SciSharp.TensorFlow.Redist" Version="2.3.0" />
+    <PackageReference Include="Microsoft.ML.Ensemble" Version="0.17.4" />
+    <PackageReference Include="Microsoft.Extensions.ML" Version="1.5.4" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ImgurClassifier.Model\ImgurClassifier.Model.csproj" />
